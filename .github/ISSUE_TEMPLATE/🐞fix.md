@@ -11,6 +11,10 @@ assignees: ''
 
 ---
 
+## 🐛 버그 스크린샷
+
+---
+
 ## ✅ To-Do
-- [] TODO
-- [] TODO
+- [ ] TODO
+- [ ] TODO
