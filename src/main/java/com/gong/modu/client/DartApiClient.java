@@ -7,6 +7,7 @@ import com.gong.modu.domain.dto.dart.DartFinancialStatementResponse;
 import com.gong.modu.exception.CustomException;
 import com.gong.modu.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -16,9 +17,16 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 import java.util.Optional;
 
 // DART API 호출을 전담하는 Client 클래스
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class DartApiClient {
+
+    // DART 응답 status 코드 - 정상 응답
+    private static final String DART_STATUS_OK = "000";
+
+    // DART 응답 status 코드 - 조회 결과 없음 (오류가 아닌 정상적인 빈 응답)
+    private static final String DART_STATUS_NO_DATA = "013";
 
     private final WebClient dartWebClient;
 
@@ -62,6 +70,7 @@ public class DartApiClient {
             return response;
 
         } catch (WebClientRequestException e) {
+            log.warn("[DART API] 요청 실패", e);
             throw new CustomException(ErrorCode.DART_API_ERROR);
         }
     }
@@ -88,6 +97,7 @@ public class DartApiClient {
             return response;
 
         } catch (WebClientResponseException e) {
+            log.warn("[DART API] HTTP 응답 오류 status={}", e.getStatusCode(), e);
             throw new CustomException(ErrorCode.DART_API_ERROR);
         }
     }
@@ -122,6 +132,7 @@ public class DartApiClient {
             return response;
 
         } catch (WebClientResponseException e) {
+            log.warn("[DART API] HTTP 응답 오류 status={}", e.getStatusCode(), e);
             throw new CustomException(ErrorCode.DART_API_ERROR);
         }
     }
@@ -154,15 +165,21 @@ public class DartApiClient {
             return response;
 
         } catch (WebClientResponseException e) {
+            log.warn("[DART API] HTTP 응답 오류 status={}", e.getStatusCode(), e);
             throw new CustomException(ErrorCode.DART_API_ERROR);
         }
     }
 
     // DART 응답 status 검증 메서드
+    // "000"은 정상, "013"은 조회 결과 없음(정상적인 빈 응답)이므로 예외로 처리하지 않음
+    // 그 외 상태값은 실제 status/message를 로그로 남긴 뒤 예외 처리
     private void validateDartStatus(String status, String message) {
-        if (!"000".equals(status)) {
-            throw new CustomException(ErrorCode.DART_API_ERROR);
+        if (DART_STATUS_OK.equals(status) || DART_STATUS_NO_DATA.equals(status)) {
+            return;
         }
+
+        log.warn("[DART API] 비정상 응답 status={}, message={}", status, message);
+        throw new CustomException(ErrorCode.DART_API_ERROR);
     }
 
     // DART 공시서류원본파일 API를 호출하여 공시 원문 ZIP 파일을 byte[]로 다운로드하는 메서드
@@ -184,8 +201,10 @@ public class DartApiClient {
 
             return response; // zip 바이너리 반환
         } catch (WebClientResponseException e) {
+            log.warn("[DART API] HTTP 응답 오류 status={}", e.getStatusCode(), e);
             throw new CustomException(ErrorCode.DART_API_ERROR);
         } catch (WebClientRequestException e) {
+            log.warn("[DART API] 요청 실패", e);
             throw new CustomException(ErrorCode.DART_API_ERROR);
         }
     }

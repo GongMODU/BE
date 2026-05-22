@@ -56,7 +56,8 @@ public class SecurityConfig {
                                 // 유튜브 자막 추출 & 요약용 관리자 API
                                 "/api/youtube/admin/**",
                                 // 공시 원문 파서 테스트용 API
-                                "/api/test/disclosure-parser/**"
+                                "/api/test/**",
+                                "/api/ipo/**"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )

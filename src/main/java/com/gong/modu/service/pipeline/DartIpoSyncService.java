@@ -5,6 +5,7 @@ import com.gong.modu.domain.dto.dart.DartDisclosureSearchResponse;
 import com.gong.modu.domain.dto.dart.DartEquitySecuritiesReportResponse;
 import com.gong.modu.domain.entity.ipo.*;
 import com.gong.modu.domain.enums.ipo.BrokerRole;
+import com.gong.modu.domain.enums.ipo.DisclosureDocumentType;
 import com.gong.modu.domain.enums.ipo.IpoEventStatus;
 import com.gong.modu.domain.enums.ipo.IpoEventType;
 import com.gong.modu.exception.CustomException;
@@ -16,12 +17,20 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
 // 공모주 관련 DART 데이터를 DB에 저장하는 Service
 // DART 공시검색 API와 지분증권 주요신고서 주요정보 API를 이용하여 ipo_events, ipo_offerings, brokers, ipo_event_brokers, ipo_disclosure_reports를 채우는 서비스
 public class DartIpoSyncService {
+
+    // DART 공시 유형 코드 - C: 발행공시 (증권신고서, 투자설명서, 증권발행실적보고서 등)
+    private static final String ISSUANCE_DISCLOSURE_TYPE = "C";
+
+    // 시장 전체 공시 검색 시 페이지네이션 안전 상한
+    private static final int MAX_SEARCH_PAGES = 50;
 
     private final DartApiClient dartApiClient;
     private final CompanyRepository companyRepository;
@@ -30,6 +39,7 @@ public class DartIpoSyncService {
     private final IpoEventBrokerRepository ipoEventBrokerRepository;
     private final BrokerRepository brokerRepository;
     private final IpoDisclosureReportRepository disclosureReportRepository;
+    private final IpoDisclosureDocumentClassifier ipoDisclosureDocumentClassifier;
 
     @Transactional
     // 특정 기업의 특정 기간 공모 관련 데이터를 동기화하는 메서드
@@ -50,9 +60,9 @@ public class DartIpoSyncService {
 
         if (disclosureSearchResponse.getList() != null) {
             disclosureSearchResponse.getList().stream()
-                    .filter(item -> item.getReportNm() != null)
-                    .filter(item -> item.getReportNm().contains("증권신고서")) // 보고서명에 증권신고서가 들어간 공시만 필터링
-                    .forEach(item -> upsertDisclosureReport(company, item)); // // 각 공시 항목을 ipo_disclosure_reports에 저장하거나 갱신
+                    // 증권신고서·투자설명서·증권발행실적보고서·신규상장 등 공모주 관련 공시만 필터링
+                    .filter(item -> ipoDisclosureDocumentClassifier.isIpoRelevantReportName(item.getReportNm()))
+                    .forEach(item -> upsertDisclosureReport(company, item)); // 각 공시 항목을 ipo_disclosure_reports에 저장하거나 갱신
         }
 
         // DART 지분증권 증권신고서 주요정보 API 호출: 청약기일, 납입기일, 인수기관명 등의 구조화 데이터를 얻기 위해 사용
@@ -69,6 +79,41 @@ public class DartIpoSyncService {
         }
     }
 
+    // 시장 전체 발행공시를 검색해 공모주 관련 공시를 제출한 기업 고유번호(corpCode)를 수집하는 메서드
+    // 스케줄러가 어떤 기업을 동기화해야 하는지 찾는 진입점으로 사용 (DB를 건드리지 않는 조회 전용)
+    public Set<String> findRecentIpoCorpCodes(String beginDate, String endDate) {
+        Set<String> corpCodes = new LinkedHashSet<>();
+
+        int pageNo = 1;
+
+        while (pageNo <= MAX_SEARCH_PAGES) {
+            // corpCode를 null로 두면 시장 전체 공시를 검색
+            DartDisclosureSearchResponse response = dartApiClient.searchDisclosure(
+                    beginDate, endDate, null, ISSUANCE_DISCLOSURE_TYPE, pageNo, 100
+            );
+
+            if (response.getList() == null || response.getList().isEmpty()) {
+                break;
+            }
+
+            // 공모주 관련 보고서명만 골라 기업 고유번호 수집
+            response.getList().stream()
+                    .filter(item -> ipoDisclosureDocumentClassifier.isIpoRelevantReportName(item.getReportNm()))
+                    .map(DartDisclosureSearchResponse.Item::getCorpCode)
+                    .filter(code -> code != null && !code.isBlank())
+                    .forEach(corpCodes::add);
+
+            // 마지막 페이지까지 순회했으면 종료
+            if (response.getTotalPage() == null || pageNo >= response.getTotalPage()) {
+                break;
+            }
+
+            pageNo++;
+        }
+
+        return corpCodes;
+    }
+
     // 공시 검색 결과 1건을 ipo_disclosure_reports에 저장하거나 갱신하는 메서드
     private void upsertDisclosureReport(
             Company company,
@@ -80,16 +125,21 @@ public class DartIpoSyncService {
                 company, item.getRceptNo(), item.getReportNm()
         );
 
+        // reportName만 보고 문서 성격을 1차 판별
+        DisclosureDocumentType documentType =
+                ipoDisclosureDocumentClassifier.detectDocumentTypeFromReportName(item.getReportNm());
+
         disclosureReportRepository.findByIpoEventIdAndRceptNo(ipoEvent.getId(), item.getRceptNo())
                 .ifPresentOrElse(
                         // 이미 존재하면 reportName만 최신값으로 갱신
-                        existing -> existing.updateReportInfo(item.getReportNm()),
+                        existing -> existing.updateReportInfo(item.getReportNm(), documentType),
 
                         () -> disclosureReportRepository.save( // 없으면 새 IpoDisclosureReport 저장
                                 IpoDisclosureReport.builder()
                                         .ipoEvent(ipoEvent)
                                         .rceptNo(item.getRceptNo())
                                         .reportName(item.getReportNm())
+                                        .documentType(documentType)
                                         .build()
                         )
                 );
@@ -239,46 +289,4 @@ public class DartIpoSyncService {
         return IpoEventStatus.UPCOMING; // 위 조건에 모두 해당하지 않으면 예정 상태
     }
 
-    // DART 공시검색 결과의 reportNm을 기준으로 공모주 관련 공시 후보인지 판단하는 메서드
-    private boolean isIpoDisclosureCandidate(String reportName) {
-        if (reportName == null || reportName.isBlank())
-            return false;
-
-        String name = reportName.trim();
-
-        // 공모주와 직접 관련될 가능성이 높은 보고서명
-        boolean hasIpoReportType =
-                name.contains("증권신고서")
-                    || name.contains("투자설명서")
-                    || name.contains("발행조건확정");
-
-        // 공모주와 관련된 키워드
-        // 보고서명이 길거나 정정 공시 형태일 때 보조 판단 기준으로 사용합
-        boolean hasIpoKeyword =
-                name.contains("지분증권")
-                        || name.contains("공모")
-                        || name.contains("모집")
-                        || name.contains("매출");
-
-        // 명백히 IPO 공시가 아닌 주요사항보고서 계열은 제외
-        boolean hasNonIpoKeyword =
-                name.contains("타법인 주식")
-                        || name.contains("출자증권")
-                        || name.contains("양도결정")
-                        || name.contains("취득결정")
-                        || name.contains("주요사항보고서")
-                        || name.contains("단일판매")
-                        || name.contains("공급계약")
-                        || name.contains("최대주주")
-                        || name.contains("사업보고서")
-                        || name.contains("반기보고서")
-                        || name.contains("분기보고서");
-
-        // 명백한 비 IPO 키워드가 있으면 제외
-        if (hasNonIpoKeyword)
-            return false;
-
-        // IPO 성격의 보고서 유형이 있거나, 공모 관련 키워드가 있으면 후보로 봄
-        return hasIpoReportType || hasIpoKeyword;
-    }
 }
