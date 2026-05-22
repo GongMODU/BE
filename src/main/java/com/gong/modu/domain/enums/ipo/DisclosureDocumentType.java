@@ -1,4 +1,4 @@
-package com.likelion14.PBL_Spring.member.domain;
+package com.gong.modu.domain.enums.ipo;
 
 // DART 공시 원문 문서가 어떤 성격의 문서인지 표현하는 Enum
 public enum DisclosureDocumentType {
@@ -19,5 +19,18 @@ public enum DisclosureDocumentType {
     NON_IPO_DOCUMENT,
 
     // 문서 성격을 판단하지 못한 경우
-    UNKNOWN
+    UNKNOWN;
+
+    // 확정 정보가 풍부한 순서를 나타내는 우선순위 (낮을수록 우선)
+    // 여러 공시 결과를 누적할 때 우선순위 높은 문서부터 순회하기 위해 사용
+    // 발행조건확정/정정 문서는 수요예측 이후 확정값을 담으므로 최우선
+    public int priority() {
+        return switch (this) {
+            case FINAL_OFFERING_CONDITION -> 1;
+            case CORRECTION_SECURITIES_REPORT -> 2;
+            case INVESTMENT_PROSPECTUS -> 3;
+            case INITIAL_SECURITIES_REPORT -> 4;
+            case UNKNOWN, NON_IPO_DOCUMENT -> 9;
+        };
+    }
 }

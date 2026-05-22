@@ -28,6 +28,25 @@ public interface IpoEventRepository extends JpaRepository<IpoEvent, Long> {
     // 청약 예정 공모주 조회
     List<IpoEvent> findBySubscriptionStartDateAfter(LocalDate date);
 
+    // 홈 화면 청약 일정 리스트 필터별 기간 조회 (수요예측/청약/락업해제/환불/상장/배정)
+    // 청약 시작일이 특정 기간에 속하는 공모 이벤트 조회
+    List<IpoEvent> findBySubscriptionStartDateBetween(LocalDate startInclusive, LocalDate endInclusive);
+
+    // 수요예측 시작일이 특정 기간에 속하는 공모 이벤트 조회
+    List<IpoEvent> findByDemandForecastStartBetween(LocalDate startInclusive, LocalDate endInclusive);
+
+    // 보호예수 해제일이 특정 기간에 속하는 공모 이벤트 조회
+    List<IpoEvent> findByLockupExpiryDateBetween(LocalDate startInclusive, LocalDate endInclusive);
+
+    // 환불일이 특정 기간에 속하는 공모 이벤트 조회
+    List<IpoEvent> findByRefundDateBetween(LocalDate startInclusive, LocalDate endInclusive);
+
+    // 상장일이 특정 기간에 속하는 공모 이벤트 조회
+    List<IpoEvent> findByListingDateBetween(LocalDate startInclusive, LocalDate endInclusive);
+
+    // 배정일이 특정 기간에 속하는 공모 이벤트 조회
+    List<IpoEvent> findByAllocationDateBetween(LocalDate startInclusive, LocalDate endInclusive);
+
     // 현재 청약 진행중 공모주 조회
     List<IpoEvent> findBySubscriptionStartDateLessThanEqualAndSubscriptionEndDateGreaterThanEqual(
             LocalDate startDate,

@@ -1,6 +1,7 @@
 package com.gong.modu.domain.entity.ipo;
 
 import com.gong.modu.domain.entity.BaseTimeEntity;
+import com.gong.modu.domain.enums.ipo.DisclosureDocumentType;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -44,7 +45,13 @@ public class IpoDisclosureReport extends BaseTimeEntity {
     @Column(name = "report_name", length = 255)
     private String reportName;
 
-    // 공시 원문에서 추출한 텍스트
+    // 공시 문서 성격
+    @Enumerated(EnumType.STRING)
+    @Column(name = "document_type", length = 50, nullable = false)
+    @Builder.Default
+    private DisclosureDocumentType documentType = DisclosureDocumentType.UNKNOWN;
+
+    // 공시 원문 ZIP에서 추출한 텍스트
     @Lob
     @Column(name = "original_text", columnDefinition = "TEXT")
     private String originalText;
@@ -84,6 +91,22 @@ public class IpoDisclosureReport extends BaseTimeEntity {
         this.originalText = originalText;
     }
 
+    // 공시명, 문서 성격 갱신 메서드
+    public void updateReportInfo(String reportName, DisclosureDocumentType documentType) {
+        this.reportName = reportName;
+
+        if (documentType != null) {
+            this.documentType = documentType;
+        }
+    }
+
+    // 문서 성격만 갱신하는 메서드 (ZIP 원문을 실제로 읽은 뒤 사용할 목적)
+    public void updateDocumentType(DisclosureDocumentType documentType) {
+        if (documentType != null) {
+            this.documentType = documentType;
+        }
+    }
+
     // 구조화 요약 결과를 갱신하는 메서드
     // AI 요약 또는 규칙 기반 요약이 완료된 뒤 호출
     public void updateSummary(
@@ -100,10 +123,5 @@ public class IpoDisclosureReport extends BaseTimeEntity {
         this.investmentPointSummary = investmentPointSummary;
         this.riskSummary = riskSummary;
         this.summaryVersion = summaryVersion;
-    }
-
-    // 공시명 갱신 메서드
-    public void updateReportInfo(String reportName) {
-        this.reportName = reportName;
     }
 }
