@@ -154,4 +154,33 @@ public class UserSubscriptionHistory extends BaseTimeEntity {
     public void markOngoing() {
         this.recordStatus = SubscriptionRecordStatus.ONGOING;
     }
+
+    // 사용자가 임의 필드를 편집할 때 사용하는 메서드 (null은 기존 값 유지)
+    public void updateUserEditableFields(
+            String inputStockName,
+            String inputCompanyName,
+            String securityCompany,
+            Long subscribedQuantity,
+            Long allocatedQuantity,
+            BigDecimal offerPrice,
+            BigDecimal subscriptionAmount,
+            BigDecimal sellPrice,
+            BigDecimal fee,
+            BigDecimal tax,
+            LocalDate sellDate,
+            String memo
+    ) {
+        if (inputStockName != null) this.inputStockName = inputStockName;
+        if (inputCompanyName != null) this.inputCompanyName = inputCompanyName;
+        if (securityCompany != null) this.securityCompany = securityCompany;
+        if (subscribedQuantity != null) this.subscribedQuantity = subscribedQuantity;
+        if (allocatedQuantity != null) this.allocatedQuantity = allocatedQuantity;
+        if (offerPrice != null) this.offerPrice = offerPrice;
+        if (subscriptionAmount != null) this.subscriptionAmount = subscriptionAmount;
+        if (sellPrice != null) this.sellPrice = sellPrice;
+        if (fee != null) this.fee = fee;
+        if (tax != null) this.tax = tax;
+        if (sellDate != null) this.sellDate = sellDate;
+        if (memo != null) this.memo = memo;
+    }
 }

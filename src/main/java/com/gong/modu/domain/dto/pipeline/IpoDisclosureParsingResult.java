@@ -5,6 +5,7 @@ import lombok.Getter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 @Getter
 @Builder
@@ -17,6 +18,12 @@ public class IpoDisclosureParsingResult {
     // 수요예측 종료일
     private LocalDate demandForecastEnd;
 
+    // 청약 시작일
+    private LocalDate subscriptionStart;
+
+    // 청약 종료일
+    private LocalDate subscriptionEnd;
+
     // 환불일
     private LocalDate refundDate;
 
@@ -25,6 +32,9 @@ public class IpoDisclosureParsingResult {
 
     // 락업해제일
     private LocalDate lockupExpiryDate;
+
+    // 대표 락업 기간(개월). 해제일이 null이고 listingDate가 있을 때 계산에 사용
+    private Integer lockupPeriodMonths;
 
     // 희망 공모가 하단
     private BigDecimal offerPriceMin;
@@ -49,4 +59,7 @@ public class IpoDisclosureParsingResult {
 
     // 보호예수 비율
     private BigDecimal protectiveCustodyRatio;
+
+    // 주관사·인수증권사 목록
+    private List<String> brokerNames;
 }

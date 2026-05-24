@@ -5,6 +5,8 @@ import com.gong.modu.domain.enums.ipo.IpoEventStatus;
 import com.gong.modu.domain.enums.ipo.IpoEventType;
 import com.gong.modu.domain.enums.ipo.MarketType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -61,4 +63,26 @@ public interface IpoEventRepository extends JpaRepository<IpoEvent, Long> {
 
     // 상장일 기준 최신순 조회
     List<IpoEvent> findAllByOrderByListingDateDesc();
+
+    // 회사명 키워드 부분 일치 검색 (대소문자 구분 없음)
+    // 청약이력 4.2 현재 청약 중 이력 등록 시 IpoEvent 선택용
+    List<IpoEvent> findTop20ByCompany_CorpNameContainingIgnoreCaseOrderByCreatedAtDesc(String keyword);
+
+    // 특정 상태의 IpoEvent ID + 회사명을 projection으로 조회 (LazyInit 방지용)
+    // 트랜잭션 없는 컨트롤러나 스케줄러에서 lazy 로딩 없이 일괄 처리할 때 사용
+    @Query("SELECT e.id, e.company.corpName FROM IpoEvent e WHERE e.status = :status")
+    List<Object[]> findIdAndCompanyNameByStatus(@Param("status") IpoEventStatus status);
+
+    // 재파싱 대상 IpoEvent의 (id, companyName) projection 조회
+    // 조건: status가 LISTED가 아니거나, listingDate가 추정값이거나, listingDate가 NULL
+    @Query("SELECT e.id, e.company.corpName FROM IpoEvent e " +
+            "WHERE e.status != :listedStatus " +
+            "   OR e.listingDateEstimated = true " +
+            "   OR e.listingDate IS NULL")
+    List<Object[]> findIdAndCompanyNameForActiveIpos(@Param("listedStatus") IpoEventStatus listedStatus);
+
+    // 모든 IpoEvent의 status를 새로 계산하기 위한 일정 정보만 추출
+    // (id, subscriptionStartDate, subscriptionEndDate, listingDate, 현재 status)
+    @Query("SELECT e.id, e.subscriptionStartDate, e.subscriptionEndDate, e.listingDate, e.status FROM IpoEvent e")
+    List<Object[]> findAllScheduleSummaries();
 }

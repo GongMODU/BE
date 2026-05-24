@@ -23,9 +23,12 @@ public class DisclosureParsingResultMerger {
         return IpoDisclosureParsingResult.builder()
                 .demandForecastStart(parseAiDate(aiResult.getDemandForecastStart()))
                 .demandForecastEnd(parseAiDate(aiResult.getDemandForecastEnd()))
+                .subscriptionStart(parseAiDate(aiResult.getSubscriptionStart()))
+                .subscriptionEnd(parseAiDate(aiResult.getSubscriptionEnd()))
                 .refundDate(parseAiDate(aiResult.getRefundDate()))
                 .listingDate(parseAiDate(aiResult.getListingDate()))
                 .lockupExpiryDate(parseAiDate(aiResult.getLockupExpiryDate()))
+                .lockupPeriodMonths(validPositiveInt(aiResult.getLockupPeriodMonths()))
                 .offerPriceMin(validMoney(aiResult.getOfferPriceMin()))
                 .offerPriceMax(validMoney(aiResult.getOfferPriceMax()))
                 .offerPrice(validMoney(aiResult.getOfferPrice()))
@@ -34,6 +37,7 @@ public class DisclosureParsingResultMerger {
                 .institutionalCompetitionRate(validMoney(aiResult.getInstitutionalCompetitionRate()))
                 .lockupRatio(validRatio(aiResult.getLockupRatio()))
                 .protectiveCustodyRatio(validRatio(aiResult.getProtectiveCustodyRatio()))
+                .brokerNames(aiResult.getBrokerNames())
                 .build();
     }
 
@@ -82,6 +86,17 @@ public class DisclosureParsingResultMerger {
 
     // Long 값이 0보다 큰지 검증하는 메서드
     private Long validPositiveLong(Long value) {
+        if (value == null)
+            return null;
+
+        if (value <= 0)
+            return null;
+
+        return value;
+    }
+
+    // Integer 값이 0보다 큰지 검증하는 메서드
+    private Integer validPositiveInt(Integer value) {
         if (value == null)
             return null;
 

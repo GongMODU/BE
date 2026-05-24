@@ -2,6 +2,7 @@ package com.gong.modu.controller.test;
 
 import com.gong.modu.client.DartApiClient;
 import com.gong.modu.domain.dto.dart.DartDisclosureSearchResponse;
+import com.gong.modu.domain.dto.dart.DartEquitySecuritiesReportResponse;
 import com.gong.modu.domain.dto.pipeline.AiDisclosureParsingResult;
 import com.gong.modu.domain.dto.pipeline.IpoDisclosureParsingResult;
 import com.gong.modu.domain.dto.test.AiDisclosureParsingResponse;
@@ -9,7 +10,9 @@ import com.gong.modu.domain.dto.test.MultiDisclosureParsingResponse;
 import com.gong.modu.domain.dto.test.MultiDisclosureParsingResponse.PerDocumentResult;
 import com.gong.modu.domain.entity.ipo.IpoDisclosureReport;
 import com.gong.modu.domain.enums.ipo.DisclosureDocumentType;
+import com.gong.modu.domain.enums.ipo.IpoEventStatus;
 import com.gong.modu.repository.ipo.IpoDisclosureReportRepository;
+import com.gong.modu.repository.ipo.IpoEventRepository;
 import com.gong.modu.service.pipeline.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Profile;
@@ -46,6 +49,7 @@ public class DisclosureParserTestController {
 
     private final DartCompanySyncService dartCompanySyncService; // 기업개황 동기화 담당
     private final DartIpoSyncService dartIpoSyncService; // 공시/주요정보 IPO 데이터 동기화 담당
+    private final IpoEventRepository ipoEventRepository; // UPCOMING 일괄 재파싱용
 
 
     // 실제 DART rceptNo로 ZIP 다운로드, AI 파싱, 검증·변환 결과까지 확인하는 테스트 API
@@ -227,6 +231,8 @@ public class DisclosureParserTestController {
         return IpoDisclosureParsingResult.builder()
                 .demandForecastStart(pickFirst(results, IpoDisclosureParsingResult::getDemandForecastStart, "demandForecastStart", fieldSourceMap))
                 .demandForecastEnd(pickFirst(results, IpoDisclosureParsingResult::getDemandForecastEnd, "demandForecastEnd", fieldSourceMap))
+                .subscriptionStart(pickFirst(results, IpoDisclosureParsingResult::getSubscriptionStart, "subscriptionStart", fieldSourceMap))
+                .subscriptionEnd(pickFirst(results, IpoDisclosureParsingResult::getSubscriptionEnd, "subscriptionEnd", fieldSourceMap))
                 .refundDate(pickFirst(results, IpoDisclosureParsingResult::getRefundDate, "refundDate", fieldSourceMap))
                 .listingDate(pickFirst(results, IpoDisclosureParsingResult::getListingDate, "listingDate", fieldSourceMap))
                 .lockupExpiryDate(pickFirst(results, IpoDisclosureParsingResult::getLockupExpiryDate, "lockupExpiryDate", fieldSourceMap))
@@ -238,6 +244,7 @@ public class DisclosureParserTestController {
                 .institutionalCompetitionRate(pickFirst(results, IpoDisclosureParsingResult::getInstitutionalCompetitionRate, "institutionalCompetitionRate", fieldSourceMap))
                 .lockupRatio(pickFirst(results, IpoDisclosureParsingResult::getLockupRatio, "lockupRatio", fieldSourceMap))
                 .protectiveCustodyRatio(pickFirst(results, IpoDisclosureParsingResult::getProtectiveCustodyRatio, "protectiveCustodyRatio", fieldSourceMap))
+                .brokerNames(pickFirst(results, IpoDisclosureParsingResult::getBrokerNames, "brokerNames", fieldSourceMap))
                 .build();
     }
 
@@ -313,7 +320,7 @@ public class DisclosureParserTestController {
 
     // 아직 원문이 파싱되지 않은 공시를 ZIP 다운로드·AI 파싱하여 DB에 반영하는 테스트 API
     // 스케줄러 parseUnparsedDartDisclosureDocuments()를 수동으로 트리거하는 용도
-    // ZIP 다운로드와 AI 호출이 포함되므로 limit이 크면 응답이 느릴 수 있음
+    // limit은 한 번 호출에 파싱할 공시 건수 (ZIP 다운로드·AI 호출 포함이라 크면 느림)
     @PostMapping("/parse-unparsed")
     public ResponseEntity<Void> parseUnparsed(
             @RequestParam(defaultValue = "5") int limit
@@ -321,6 +328,37 @@ public class DisclosureParserTestController {
         dartDisclosureParsingService.parseUnparsedDisclosureReports(limit);
 
         return ResponseEntity.ok().build();
+    }
+
+    // 특정 기업의 estkRs(지분증권 증권신고서 주요정보) 원응답을 그대로 확인하는 진단용 테스트 API
+    // 청약기일 등이 sync 시 채워지지 않는 원인(데이터 없음/형식 등)을 파악하기 위함
+    @GetMapping("/equity-report/{corpCode}")
+    public ResponseEntity<Map<String, Object>> inspectEquityReport(
+            @PathVariable String corpCode,
+            @RequestParam(required = false) String beginDate,
+            @RequestParam(required = false) String endDate
+    ) {
+        LocalDate today = LocalDate.now();
+        String end = endDate != null ? endDate : today.format(BASIC_DATE);
+        String begin = beginDate != null ? beginDate : today.minusDays(120).format(BASIC_DATE);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("corpCode", corpCode);
+        result.put("beginDate", begin);
+        result.put("endDate", end);
+
+        try {
+            DartEquitySecuritiesReportResponse response =
+                    dartApiClient.getEquitySecuritiesReport(corpCode, begin, end);
+            result.put("dartStatus", response.getStatus());
+            result.put("dartMessage", response.getMessage());
+            result.put("itemCount", response.getList() == null ? 0 : response.getList().size());
+            result.put("items", response.getList());
+        } catch (Exception e) {
+            result.put("error", e.getMessage());
+        }
+
+        return ResponseEntity.ok(result);
     }
 
     // 실제 DART rceptNo로 ZIP 다운로드, 텍스트 추출, AI 파싱, DB 반영까지 수행하는 테스트 API
@@ -335,6 +373,90 @@ public class DisclosureParserTestController {
         dartDisclosureParsingService.parseDisclosureReport(ipoEventId, rceptNo);
 
         return ResponseEntity.ok().build();
+    }
+
+    // 특정 IpoEvent에 속한 모든 공시를 강제로 재파싱하는 테스트 API
+    // 컨텍스트 추출 로직이나 AI 프롬프트를 바꾼 뒤, 이미 original_text가 있는 공시도 다시 돌릴 때 사용
+    // rceptNo만 projection으로 조회해서 LOB(original_text) 로딩 시 트랜잭션 문제 회피
+    @PostMapping("/reparse-by-ipo/{ipoEventId}")
+    public ResponseEntity<Map<String, Object>> reparseByIpoEvent(
+            @PathVariable Long ipoEventId
+    ) {
+        List<String> rceptNos = disclosureReportRepository.findRceptNosByIpoEventId(ipoEventId);
+
+        List<String> reparsed = new ArrayList<>();
+        List<String> failed = new ArrayList<>();
+
+        for (String rceptNo : rceptNos) {
+            try {
+                dartDisclosureParsingService.parseDisclosureReport(ipoEventId, rceptNo);
+                reparsed.add(rceptNo);
+            } catch (Exception e) {
+                failed.add(rceptNo + ": " + e.getMessage());
+            }
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("ipoEventId", ipoEventId);
+        result.put("totalReports", rceptNos.size());
+        result.put("reparsed", reparsed);
+        result.put("failed", failed);
+
+        return ResponseEntity.ok(result);
+    }
+
+    // 재파싱이 필요한 모든 IPO의 공시를 일괄 재파싱하는 테스트 API
+    // 조건: status가 LISTED가 아니거나, listingDate가 추정값이거나, listingDate가 NULL
+    //       (= 잘못된 stale 추정값 때문에 LISTED로 잘못 마킹된 IPO도 자동 포함되어 복구됨)
+    // (구 엔드포인트명 reparse-all-upcoming → reparse-all-active 로 변경; UPCOMING만 잡으면 catch-22 발생)
+    @PostMapping("/reparse-all-active")
+    public ResponseEntity<Map<String, Object>> reparseAllActive() {
+        List<Object[]> activeProjections =
+                ipoEventRepository.findIdAndCompanyNameForActiveIpos(IpoEventStatus.LISTED);
+
+        List<Map<String, Object>> perIpoResult = new ArrayList<>();
+        int totalReparsed = 0;
+        int totalFailed = 0;
+
+        for (Object[] projection : activeProjections) {
+            Long ipoEventId = (Long) projection[0];
+            String companyName = (String) projection[1];
+
+            List<String> rceptNos = disclosureReportRepository.findRceptNosByIpoEventId(ipoEventId);
+
+            List<String> reparsed = new ArrayList<>();
+            List<String> failed = new ArrayList<>();
+
+            for (String rceptNo : rceptNos) {
+                try {
+                    dartDisclosureParsingService.parseDisclosureReport(ipoEventId, rceptNo);
+                    reparsed.add(rceptNo);
+                } catch (Exception e) {
+                    failed.add(rceptNo + ": " + e.getMessage());
+                }
+            }
+
+            totalReparsed += reparsed.size();
+            totalFailed += failed.size();
+
+            Map<String, Object> ipoResult = new LinkedHashMap<>();
+            ipoResult.put("ipoEventId", ipoEventId);
+            ipoResult.put("companyName", companyName);
+            ipoResult.put("reparsedCount", reparsed.size());
+            ipoResult.put("failedCount", failed.size());
+            if (!failed.isEmpty()) {
+                ipoResult.put("failed", failed);
+            }
+            perIpoResult.add(ipoResult);
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("activeIpoCount", activeProjections.size());
+        result.put("totalReparsed", totalReparsed);
+        result.put("totalFailed", totalFailed);
+        result.put("perIpo", perIpoResult);
+
+        return ResponseEntity.ok(result);
     }
 
     // 원문의 앞부분 일부만 잘라서 미리보기로 반환하는 메서드

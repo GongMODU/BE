@@ -67,17 +67,49 @@ public class ExternalDataScheduler {
         log.info("[Scheduler] DART IPO 데이터 동기화 종료");
     }
 
+    // 모든 IpoEvent의 status를 오늘 날짜 기준으로 다시 계산해 DB에 반영하는 스케줄러 메서드
+    // 매일 자정 30분에 실행되어 시간 경과로 인한 UPCOMING → ONGOING → CLOSED → LISTED 전이를 DB에 반영
+    // 응답은 resolveStatus(today)로 항상 최신이지만, status 컬럼 필터 쿼리(findByStatus 등)가
+    // stale 결과를 안 내도록 일일 동기화가 필요함
+    @Scheduled(cron = "0 30 0 * * *")
+    public void refreshIpoStatuses() {
+        log.info("[Scheduler] IPO 상태 자동 갱신 시작");
+        try {
+            int updated = dartIpoSyncService.refreshAllIpoStatuses();
+            log.info("[Scheduler] IPO 상태 자동 갱신 완료: {} 건 변경", updated);
+        } catch (Exception e) {
+            log.error("[Scheduler] IPO 상태 자동 갱신 실패", e);
+        }
+    }
+
     // 아직 원문이 파싱되지 않은 DART 공시를 찾아 ZIP 다운로드/파싱을 수행하는 스케줄러 메서드
-    @Scheduled(cron = "0 0 2 * * *")
+    // 새벽 2시(DART 동기화 완료 후) + 오전 8시(당일 업무 전 보완 처리) 하루 2회 실행
+    @Scheduled(cron = "0 0 2,8 * * *")
     public void parseUnparsedDartDisclosureDocuments() {
         log.info("[Scheduler] DART 공시 원문 ZIP 파싱 시작");
         try {
-            dartDisclosureParsingService.parseUnparsedDisclosureReports(20);
+            dartDisclosureParsingService.parseUnparsedDisclosureReports(50);
         } catch (Exception e) {
             log.error("[Scheduler] DART 공시 원문 ZIP 파싱 실패", e);
         }
 
         log.info("[Scheduler] DART 공시 원문 ZIP 파싱 종료");
+    }
+
+    // 활성 IPO(LISTED + 확정 listingDate가 아닌 모든 IPO)의 공시를 매일 일괄 재파싱
+    // 컨텍스트 추출 로직이나 AI 프롬프트가 개선되면 신규 공시가 적은 환경에서도
+    // 기존 데이터에 자동으로 적용되도록 함 (개발자 수동 호출 불필요)
+    // 잘못된 stale 추정값 때문에 LISTED로 잘못 마킹된 IPO도 자동 복구 가능
+    // 새벽 3시 (parse-unparsed 2시 완료 후) 실행
+    @Scheduled(cron = "0 0 3 * * *")
+    public void reparseActiveIpos() {
+        log.info("[Scheduler] 활성 IPO 일괄 재파싱 시작");
+        try {
+            dartDisclosureParsingService.reparseAllActiveIpos();
+        } catch (Exception e) {
+            log.error("[Scheduler] 활성 IPO 일괄 재파싱 실패", e);
+        }
+        log.info("[Scheduler] 활성 IPO 일괄 재파싱 종료");
     }
 
 

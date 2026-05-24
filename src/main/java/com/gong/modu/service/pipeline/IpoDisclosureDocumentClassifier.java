@@ -193,6 +193,19 @@ public class IpoDisclosureDocumentClassifier {
         return hasIpoReportType || hasIpoKeyword;
     }
 
+    // reportNm이 지분증권 증권신고서 계열(신규 IPO)인지 판단하는 메서드
+    // 시장 전체 발견 단계에서 채무증권 등 비지분증권 공시를 제외하기 위해 사용
+    public boolean isEquityOfferingReportName(String reportName) {
+        if (reportName == null || reportName.isBlank()) {
+            return false;
+        }
+
+        String name = reportName.trim();
+
+        // 증권신고서(지분증권), [기재정정]증권신고서(지분증권), [발행조건확정]증권신고서(지분증권) 등을 매칭
+        return name.contains("증권신고서") && name.contains("지분증권");
+    }
+
     private String normalize(String text) {
         return text.replaceAll("\\s+", " ").trim();
     }

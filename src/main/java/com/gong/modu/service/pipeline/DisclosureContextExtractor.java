@@ -9,12 +9,17 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 @RequiredArgsConstructor
 // AI에게 보낼 공시 원문 일부 문맥을 추출하는 클래스
 public class DisclosureContextExtractor {
-    private static final int MAX_CONTEXT_LENGTH = 30_000;
+    // AI에게 전달할 최대 컨텍스트 길이
+    // 한글 30,000자에 6개 섹션을 다 담으려니 OFFERING_PROCEDURE 등 후순위 섹션이 잘리는 케이스 다수 발생
+    // 60,000자로 늘려도 Claude Sonnet 입력 비용은 공시 1건당 약 $0.08 수준이라 부담 적음
+    // (lost-in-the-middle 영향을 고려해 무한정 키우지 않고 적정선 유지)
+    private static final int MAX_CONTEXT_LENGTH = 60_000;
 
     // 같은 섹션 타입 간 중복 허용 임계값 (80% 이상 겹치면 제외)
     private static final double SAME_TYPE_OVERLAP_THRESHOLD = 0.8;
@@ -28,7 +33,8 @@ public class DisclosureContextExtractor {
             DisclosureSectionType.OFFERING_PROCEDURE,
             DisclosureSectionType.BOOKBUILDING_RESULT,
             DisclosureSectionType.OFFER_PRICE_DECISION,
-            DisclosureSectionType.LOCKUP
+            DisclosureSectionType.LOCKUP,
+            DisclosureSectionType.UNDERWRITER
     );
 
     // 섹션 추출 실패 시 fallback으로 사용할 키워드 목록
@@ -48,6 +54,36 @@ public class DisclosureContextExtractor {
             "상장예정주식수"
     );
 
+    // 잘리지 않도록 컨텍스트 맨 앞에 무조건 주입할 핵심 키워드들
+    // (특히 상장예정일·매매개시일은 OFFERING_PROCEDURE 섹션 우선순위가 낮아서 자주 잘림)
+    // 동일 키워드가 규정 텍스트에 수십 번 나오므로, 윈도우에 실제 한국 날짜 패턴이 포함된 것만 채택
+    private static final List<String> CRITICAL_KEYWORDS = List.of(
+            "상장예정일",
+            "상장 예정일",
+            "상장(예정)일",
+            "매매개시일",
+            "신규상장일",
+            "신규상장",
+            "상장일",
+            "공모일정",
+            "주요일정",
+            "주요 일정",
+            "공모 일정"
+    );
+
+    // 핵심 키워드 주변에 잡을 윈도우 크기 (앞 300자 + 뒤 1500자)
+    private static final int CRITICAL_WINDOW_BEFORE = 300;
+    private static final int CRITICAL_WINDOW_AFTER = 1500;
+
+    // 핵심 키워드 컨텍스트가 사용할 최대 예산 (전체 60000자 중 일부 우선 할당)
+    private static final int CRITICAL_CONTEXT_BUDGET = 8000;
+
+    // 한국 IPO 공시에서 자주 쓰이는 날짜 표기 패턴
+    // yyyy년 m월 d일 / yyyy.m.d / yyyy-m-d / yyyy/m/d 모두 매치
+    private static final Pattern KOREAN_DATE_PATTERN = Pattern.compile(
+            "\\d{4}\\s*[년./\\-]\\s*\\d{1,2}\\s*[월./\\-]\\s*\\d{1,2}\\s*일?"
+    );
+
     private final DisclosureSectionExtractor disclosureSectionExtractor;
 
     // 공시 원문에서 AI 파싱에 필요한 섹션 문맥을 추출하는 메서드
@@ -55,11 +91,16 @@ public class DisclosureContextExtractor {
         if (originalText == null || originalText.isBlank())
             return "";
 
+        // 1) 상장예정일/매매개시일 등 핵심 키워드 주변을 먼저 뽑아 컨텍스트 맨 앞에 고정 배치
+        //    (섹션 추출 우선순위에 밀려 잘리는 케이스 방어)
+        String criticalContext = extractCriticalKeywordContext(originalText);
+
         List<DisclosureSection> sections =
                 disclosureSectionExtractor.extractSectionByTypes(originalText, ALL_SECTION_TYPES);
 
         if (sections.isEmpty()) {
-            return extractFallbackKeywordContext(originalText);
+            String fallback = extractFallbackKeywordContext(originalText);
+            return prependCriticalContext(criticalContext, fallback);
         }
 
         List<DisclosureSection> selected = selectNonOverlappingSections(sections);
@@ -74,11 +115,61 @@ public class DisclosureContextExtractor {
         // 섹션 추출 후 남은 예산으로 문서 후반부를 추가해 미발견 구간을 커버
         joined = appendTailCoverageIfBudgetRemains(joined, originalText, selected);
 
-        if (joined.length() > MAX_CONTEXT_LENGTH) {
-            return joined.substring(0, MAX_CONTEXT_LENGTH);
+        String withCritical = prependCriticalContext(criticalContext, joined);
+
+        if (withCritical.length() > MAX_CONTEXT_LENGTH) {
+            return withCritical.substring(0, MAX_CONTEXT_LENGTH);
         }
 
-        return joined;
+        return withCritical;
+    }
+
+    // 핵심 키워드(상장예정일/매매개시일 등) 주변 텍스트를 모아 컨텍스트 맨 앞에 붙이는 메서드
+    // 윈도우 안에 실제 한국 날짜 패턴이 있는 경우만 채택 (규정·법령 인용문 필터링)
+    private String extractCriticalKeywordContext(String originalText) {
+        String normalized = normalize(originalText);
+
+        Set<String> windows = new LinkedHashSet<>();
+
+        for (String keyword : CRITICAL_KEYWORDS) {
+            int fromIndex = 0;
+            while (fromIndex < normalized.length()) {
+                int keywordIndex = normalized.indexOf(keyword, fromIndex);
+                if (keywordIndex < 0) break;
+
+                int start = Math.max(0, keywordIndex - CRITICAL_WINDOW_BEFORE);
+                int end = Math.min(normalized.length(), keywordIndex + CRITICAL_WINDOW_AFTER);
+                String window = normalized.substring(start, end);
+
+                // 윈도우 안에 한국 날짜 패턴이 있어야만 채택 (실제 일정표 vs 규정 텍스트 구분)
+                if (KOREAN_DATE_PATTERN.matcher(window).find()) {
+                    windows.add(window);
+                }
+
+                fromIndex = keywordIndex + keyword.length();
+            }
+        }
+
+        if (windows.isEmpty()) return "";
+
+        String joined = String.join("\n---\n", windows);
+
+        if (joined.length() > CRITICAL_CONTEXT_BUDGET) {
+            joined = joined.substring(0, CRITICAL_CONTEXT_BUDGET);
+        }
+
+        return "[CRITICAL_KEYWORDS: 일정표(상장예정일/매매개시일/공모일정 + 날짜 포함) 발췌]\n" + joined;
+    }
+
+    // 핵심 키워드 컨텍스트를 메인 컨텍스트 앞에 결합하는 메서드
+    private String prependCriticalContext(String criticalContext, String mainContext) {
+        if (criticalContext == null || criticalContext.isEmpty()) {
+            return mainContext;
+        }
+        if (mainContext == null || mainContext.isEmpty()) {
+            return criticalContext;
+        }
+        return criticalContext + "\n\n=== END OF CRITICAL KEYWORDS ===\n\n" + mainContext;
     }
 
     // 디버깅용: 실제로 AI에게 전달되는 섹션 목록과 동일한 필터를 적용해 반환
