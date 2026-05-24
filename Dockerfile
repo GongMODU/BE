@@ -13,4 +13,5 @@ COPY src/main/resources/scripts/ src/main/resources/scripts/
 
 COPY build/libs/*.jar app.jar
 
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# 시작 시 jar 사이즈/시각을 로그에 남겨 OLD jar 배포 사고를 즉시 감지
+ENTRYPOINT ["sh", "-c", "ls -l /app/app.jar && java -jar /app/app.jar"]
