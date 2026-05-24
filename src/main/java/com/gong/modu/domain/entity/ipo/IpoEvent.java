@@ -66,6 +66,14 @@ public class IpoEvent extends BaseTimeEntity {
     @Column(name = "lockup_expiry_date")
     private LocalDate lockupExpiryDate; // 락업해제일
 
+    // 상장일이 거래소 승인 전이라 청약종료일 기준으로 추정해 채운 값인지 여부 (true = 추정값, false 또는 null = 확정값)
+    @Column(name = "listing_date_estimated")
+    private Boolean listingDateEstimated;
+
+    // 락업해제일이 listingDate + lockupPeriodMonths 로 계산된 값인지 여부 (true = 추정값, false 또는 null = AI 직접 추출 확정값)
+    @Column(name = "lockup_expiry_date_estimated")
+    private Boolean lockupExpiryDateEstimated;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "market_type", length = 20) // 시장 구분: KOSPI, KOSDAQ, KONEX
     private MarketType marketType; // 이 공모 이벤트가 목표로 하는 상장 시장
@@ -121,21 +129,54 @@ public class IpoEvent extends BaseTimeEntity {
         this.lockupExpiryDate = lockupExpiryDate;
     }
 
-    // DART 주요정보 API에서 확실하게 제공되는 일정만 갱신하는 메서드
+    // DART 주요정보 API에서 얻은 일정을 선택적으로 갱신하는 메서드
+    // estkRs는 항목별로 빈 값을 줄 수 있으므로, 값이 있을 때만 갱신해 기존 값을 보존한다
     public void updateDartSchedule(
             LocalDate subscriptionStartDate,
             LocalDate subscriptionEndDate,
             LocalDate paymentDate,
             LocalDate allocationDate
     ) {
-        this.subscriptionStartDate = subscriptionStartDate;
-        this.subscriptionEndDate = subscriptionEndDate;
-        this.paymentDate = paymentDate;
-        this.allocationDate = allocationDate;
+        if (subscriptionStartDate != null) {
+            this.subscriptionStartDate = subscriptionStartDate;
+        }
+        if (subscriptionEndDate != null) {
+            this.subscriptionEndDate = subscriptionEndDate;
+        }
+        if (paymentDate != null) {
+            this.paymentDate = paymentDate;
+        }
+        if (allocationDate != null) {
+            this.allocationDate = allocationDate;
+        }
     }
 
     public void updateStatus(IpoEventStatus status) { // 공모이벤트 진행 상태 변경 메서드
         this.status = status; // UPCOMING, ONGOING, CLOSED, LISTED 중 하나로 갱신
+    }
+
+    // 청약/상장 일정과 기준일을 비교해 현재 진행 상태를 계산하는 메서드
+    // status 컬럼은 시간이 지나면 낡으므로, 조회 시점 기준으로 상태를 다시 계산할 때 사용
+    public IpoEventStatus resolveStatus(LocalDate today) {
+        // 상장일이 있고 오늘 또는 과거라면 이미 상장된 상태
+        if (listingDate != null && !listingDate.isAfter(today)) {
+            return IpoEventStatus.LISTED;
+        }
+
+        // 오늘이 청약 시작일과 종료일 사이면 청약 진행중
+        if (subscriptionStartDate != null && subscriptionEndDate != null
+                && !today.isBefore(subscriptionStartDate)
+                && !today.isAfter(subscriptionEndDate)) {
+            return IpoEventStatus.ONGOING;
+        }
+
+        // 청약 종료일이 지났으면 청약 마감 (상장 전)
+        if (subscriptionEndDate != null && today.isAfter(subscriptionEndDate)) {
+            return IpoEventStatus.CLOSED;
+        }
+
+        // 위 조건에 모두 해당하지 않으면 청약 예정 상태
+        return IpoEventStatus.UPCOMING;
     }
 
     // 공모 이벤트 기본 정보 갱신 메서드
@@ -157,6 +198,8 @@ public class IpoEvent extends BaseTimeEntity {
     public void updateParsedSchedule(
             LocalDate demandForecastStart,
             LocalDate demandForecastEnd,
+            LocalDate subscriptionStartDate,
+            LocalDate subscriptionEndDate,
             LocalDate refundDate,
             LocalDate listingDate,
             LocalDate lockupExpiryDate
@@ -172,6 +215,16 @@ public class IpoEvent extends BaseTimeEntity {
             this.demandForecastEnd = demandForecastEnd;
         }
 
+        // 파싱된 청약 시작일이 있을 때만 기존 값을 갱신
+        if (subscriptionStartDate != null) {
+            this.subscriptionStartDate = subscriptionStartDate;
+        }
+
+        // 파싱된 청약 종료일이 있을 때만 기존 값을 갱신
+        if (subscriptionEndDate != null) {
+            this.subscriptionEndDate = subscriptionEndDate;
+        }
+
         // 파싱된 환불일이 있을 때만 기존 값을 갱신
         if (refundDate != null) {
             this.refundDate = refundDate;
@@ -185,6 +238,20 @@ public class IpoEvent extends BaseTimeEntity {
         // 파싱된 보호예수 해제일이 있을 때만 기존 값을 갱신
         if (lockupExpiryDate != null) {
             this.lockupExpiryDate = lockupExpiryDate;
+        }
+    }
+
+    // 상장일 추정 여부 갱신 메서드 (null이 아닌 경우에만 변경)
+    public void markListingDateEstimated(Boolean estimated) {
+        if (estimated != null) {
+            this.listingDateEstimated = estimated;
+        }
+    }
+
+    // 락업해제일 추정 여부 갱신 메서드 (null이 아닌 경우에만 변경)
+    public void markLockupExpiryDateEstimated(Boolean estimated) {
+        if (estimated != null) {
+            this.lockupExpiryDateEstimated = estimated;
         }
     }
 }

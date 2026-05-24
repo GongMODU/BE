@@ -65,7 +65,16 @@ public enum ErrorCode {
     DISCLOSURE_PARSING_FAILED(HttpStatus.BAD_GATEWAY, "공시 원문 파싱 중 오류가 발생했습니다."),
 
     // AI를 이용한 공시 원문 보완 파싱이 실패한 경우 (Claude 응답은 왔지만 JSON 파싱 실패, 필드 변환 실패 등이 발생한 경우)
-    AI_DISCLOSURE_PARSING_FAILED(HttpStatus.BAD_GATEWAY, "AI 공시 보완 파싱 중 오류가 발생했습니다.");
+    AI_DISCLOSURE_PARSING_FAILED(HttpStatus.BAD_GATEWAY, "AI 공시 보완 파싱 중 오류가 발생했습니다."),
+
+    // 관심 공모주
+    ALREADY_INTERESTED_IPO(HttpStatus.CONFLICT, "이미 관심 공모주로 등록된 종목입니다."),
+    INTERESTED_IPO_NOT_FOUND(HttpStatus.NOT_FOUND, "관심 공모주 등록 내역을 찾을 수 없습니다."),
+
+    // 청약 이력
+    SUBSCRIPTION_HISTORY_NOT_FOUND(HttpStatus.NOT_FOUND, "청약 이력을 찾을 수 없습니다."),
+    SUBSCRIPTION_HISTORY_FORBIDDEN(HttpStatus.FORBIDDEN, "본인의 청약 이력만 조회/수정/삭제할 수 있습니다."),
+    SUBSCRIPTION_HISTORY_INVALID_INPUT(HttpStatus.BAD_REQUEST, "청약 이력 입력 값이 올바르지 않습니다.");
 
     private final HttpStatus httpStatus;
     private final String message;

@@ -22,4 +22,17 @@ public class AsyncConfig {
         executor.initialize();
         return executor;
     }
+
+    // 공시 원문 ZIP 다운로드 + Claude API 호출이 모두 네트워크 I/O이므로 병렬 처리로 속도 개선
+    // Claude API rate limit을 고려해 스레드 수를 5개로 제한
+    @Bean("disclosureParsingPool")
+    public Executor disclosureParsingPool() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(5);
+        executor.setMaxPoolSize(5);
+        executor.setQueueCapacity(50);
+        executor.setThreadNamePrefix("disclosure-parsing-");
+        executor.initialize();
+        return executor;
+    }
 }

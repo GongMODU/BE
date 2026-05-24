@@ -1,219 +1,136 @@
 package com.gong.modu.service.pipeline;
 
-import com.gong.modu.client.DartApiClient;
-import com.gong.modu.domain.dto.pipeline.AiDisclosureParsingResult;
-import com.gong.modu.domain.dto.pipeline.IpoDisclosureParsingResult;
 import com.gong.modu.domain.entity.ipo.IpoDisclosureReport;
-import com.gong.modu.domain.entity.ipo.IpoEvent;
-import com.gong.modu.domain.entity.ipo.IpoMetric;
-import com.gong.modu.domain.entity.ipo.IpoOffering;
-import com.gong.modu.domain.enums.ipo.DisclosureDocumentType;
-import com.gong.modu.exception.CustomException;
-import com.gong.modu.exception.ErrorCode;
+import com.gong.modu.domain.enums.ipo.IpoEventStatus;
 import com.gong.modu.repository.ipo.IpoDisclosureReportRepository;
-import com.gong.modu.repository.ipo.IpoEventRepository;
-import com.gong.modu.repository.ipo.IpoMetricRepository;
-import com.gong.modu.repository.ipo.IpoOfferingRepository;
 import com.gong.modu.util.RedisUtil;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
-// DART 공시 원문 ZIP을 다운로드하고 AI 파싱을 수행한 뒤, 일부 IPO 핵심값을 파싱하여 DB에 반영하는 서비스 클래스
+// 미파싱 공시 목록을 조회하고 병렬로 파싱 작업을 분배하는 오케스트레이터
+// 실제 파싱 트랜잭션은 DisclosureParsingExecutor에 위임하여 @Transactional이 정상 동작하게 함
 public class DartDisclosureParsingService {
 
-    private final DartApiClient dartApiClient;
-    private final DisclosureTextExtractor disclosureTextExtractor;
-    private final IpoEventRepository ipoEventRepository;
-    private final IpoOfferingRepository ipoOfferingRepository;
-    private final IpoMetricRepository ipoMetricRepository;
     private final IpoDisclosureReportRepository disclosureReportRepository;
     private final RedisUtil redisUtil;
-    private final IpoDisclosureDocumentClassifier ipoDisclosureDocumentClassifier;
+    private final DisclosureParsingExecutor disclosureParsingExecutor;
+    private final Executor disclosureParsingPool;
 
-    // AI 파싱에 필요한 문맥을 추출하는 클래스
-    private final DisclosureContextExtractor disclosureContextExtractor;
-    // 클로드를 호출해서 IPO 핵심값을 추출하는 서비스
-    private final AiDisclosureParsingService aiDisclosureParsingService;
-    // AI 파싱 결과를 검증·변환하는 클래스
-    private final DisclosureParsingResultMerger disclosureParsingResultMerger;
+    public DartDisclosureParsingService(
+            IpoDisclosureReportRepository disclosureReportRepository,
+            RedisUtil redisUtil,
+            DisclosureParsingExecutor disclosureParsingExecutor,
+            @Qualifier("disclosureParsingPool") Executor disclosureParsingPool
+    ) {
+        this.disclosureReportRepository = disclosureReportRepository;
+        this.redisUtil = redisUtil;
+        this.disclosureParsingExecutor = disclosureParsingExecutor;
+        this.disclosureParsingPool = disclosureParsingPool;
+    }
 
-    // 아직 original_text가 없는 공시들을 일정 개수만큼 찾아 원문 ZIP 다운로드/파싱을 수행하는 메서드
+    // 아직 original_text가 없는 공시들을 일정 개수만큼 찾아 병렬로 파싱을 수행하는 메서드
+    // 같은 IPO의 공시는 순차 처리(race condition 방지), 다른 IPO끼리만 병렬
     public void parseUnparsedDisclosureReports(int limit) {
-        // 공시 조회
         List<IpoDisclosureReport> reports = disclosureReportRepository
                 .findByOriginalTextIsNull(PageRequest.of(0, limit));
 
         if (reports.isEmpty()) {
-            log.info("DART Disclosure Parsing] 미파싱 공시 없음");
+            log.info("[DART Disclosure Parsing] 미파싱 공시 없음");
             return;
         }
 
-        for (IpoDisclosureReport report : reports) {
-
-            String rceptNo = report.getRceptNo();
-
-            // 최근 실패한 공시는 일정 시간 동안 재시도 X
-            if (redisUtil.isDisclosureParsingRecentlyFailed(rceptNo)) {
-                log.info("[DART Disclosure Parsing] 최근 실패 이력으로 건너뜀: rceptNo={}", rceptNo);
-                continue;
-            }
-
-            // 같은 공시를 여러 스케줄러 인스턴스가 동시에 처리하지 않도록 Redis lock을 획득
-            boolean locked = redisUtil.tryLockDisclosureParsing(rceptNo, 30);
-
-            if (!locked) {
-                log.info("[DART Disclosure Parsing] 이미 파싱 중인 공시로 건너뜀: rceptNo={}", rceptNo);
-                continue;
-            }
-
-            try {
-                // 각 공시마다 단건 파싱 메서드 호출
-                parseDisclosureReport(report.getIpoEvent().getId(), rceptNo);
-            } catch (Exception e) {
-                // 실패한 공시는 6시간 동안 재시도를 막음
-                redisUtil.markDisclosureParsingFailed(rceptNo, 6);
-
-                log.warn("[DART Disclosure Parsing] 공시 원문 파싱 실패: rceptNo={}", rceptNo, e);
-            } finally {
-                // 성공/실패 여부와 관계없이 lock은 해제
-                redisUtil.unlockDisclosureParsing(rceptNo);
-            }
-        }
-
-    }
-
-    // DART 공시 접수번호를 기준으로 ZIP 다운로드, 텍스트 추출, 정규식 파싱, AI 보완 파싱, DB 반영까지 수행하는 메서드
-    @Transactional
-    public void parseDisclosureReport(Long ipoEventId, String rceptNo) {
-        IpoEvent ipoEvent = ipoEventRepository.findById(ipoEventId)
-                .orElseThrow(() -> new CustomException(ErrorCode.IPO_EVENT_NOT_FOUND));
-
-        // DART 공시 원문 ZIP 파일 다운로드
-        byte[] zipBytes = dartApiClient.downloadDisclosureDocumentZip(rceptNo);
-
-        // 텍스트 추출
-        String originalText = disclosureTextExtractor.extractTextFromZip(zipBytes);
-
-        if (originalText == null || originalText.isBlank()) {
-            throw new CustomException(ErrorCode.DISCLOSURE_PARSING_FAILED);
-        }
-
-        // 원문 텍스트 기준으로 문서 성격을 다시 판별
-        DisclosureDocumentType documentType =
-                ipoDisclosureDocumentClassifier.detectDocumentType(originalText);
-
-        // 원문 텍스트와 documentType을 ipo_disclosure_reports에 저장하거나 갱신
-        upsertDisclosureOriginalText(ipoEvent, rceptNo, originalText, documentType);
-
-        // IPO 관련 문서가 아니라면 파싱 X
-        if (documentType == DisclosureDocumentType.NON_IPO_DOCUMENT) {
-            log.info(
-                    "[DART Disclosure Parsing] IPO 관련 공시가 아니므로 값 파싱 건너뜀: rceptNo={}, documentType={}",
-                    rceptNo,
-                    documentType
-            );
-            return;
-        }
-
-        // 원문에서 AI 파싱에 필요한 섹션 문맥을 추출
-        String aiContext = disclosureContextExtractor.extractContext(originalText);
-
-        // AI 파싱 결과를 담을 변수
-        AiDisclosureParsingResult aiResult = null;
-
-        if (aiContext != null && !aiContext.isBlank()) {
-            aiResult = aiDisclosureParsingService.parseWithAi(aiContext);
-        }
-
-        // AI 결과를 검증·변환하여 최종 파싱 결과 생성
-        IpoDisclosureParsingResult parsingResult =
-                disclosureParsingResultMerger.toResult(aiResult);
-
-        // 파싱 결과를 ipo_events, ipo_offerings, ipo_metrics에 반영
-        applyParsingResult(ipoEvent, parsingResult);
-
-    }
-
-    // 공시 원문 텍스트를 ipo_disclosure_reports에에 저장하거나 갱신하는 메서드
-    private IpoDisclosureReport upsertDisclosureOriginalText(
-            IpoEvent ipoEvent,
-            String rceptNo,
-            String originalText,
-            DisclosureDocumentType documentType
-    ) {
-        return disclosureReportRepository.findByIpoEventIdAndRceptNo(ipoEvent.getId(), rceptNo)
-                .map(existing -> {
-                    // 기존 공시 레코드의 원문 텍스트를 최신 추출 결과로 갱신
-                    existing.updateOriginalText(originalText);
-
-                    // 원문 텍스트 기준으로 다시 판별한 문서 성격을 갱신
-                    existing.updateDocumentType(documentType);
-
-                    return existing;
+        // 실패 이력 / lock 필터링 후 IPO별로 그룹핑
+        Map<Long, List<IpoDisclosureReport>> grouped = reports.stream()
+                .filter(report -> {
+                    if (redisUtil.isDisclosureParsingRecentlyFailed(report.getRceptNo())) {
+                        log.info("[DART Disclosure Parsing] 최근 실패 이력으로 건너뜀: rceptNo={}", report.getRceptNo());
+                        return false;
+                    }
+                    return true;
                 })
-                .orElseGet(() -> disclosureReportRepository.save(
-                        IpoDisclosureReport.builder()
-                                .ipoEvent(ipoEvent)
-                                .rceptNo(rceptNo)
-                                .reportName("DART 원문 공시") // 임시명
-                                .documentType(documentType)
-                                .originalText(originalText)
-                                .build()
-                ));
+                .filter(report -> {
+                    if (!redisUtil.tryLockDisclosureParsing(report.getRceptNo(), 30)) {
+                        log.info("[DART Disclosure Parsing] 이미 파싱 중인 공시로 건너뜀: rceptNo={}", report.getRceptNo());
+                        return false;
+                    }
+                    return true;
+                })
+                .collect(Collectors.groupingBy(r -> r.getIpoEvent().getId()));
+
+        List<CompletableFuture<Void>> futures = grouped.values().stream()
+                .map(reportsInOneIpo -> CompletableFuture.runAsync(() -> {
+                    for (IpoDisclosureReport report : reportsInOneIpo) {
+                        String rceptNo = report.getRceptNo();
+                        try {
+                            disclosureParsingExecutor.parseDisclosureReport(
+                                    report.getIpoEvent().getId(), rceptNo);
+                        } catch (Exception e) {
+                            redisUtil.markDisclosureParsingFailed(rceptNo, 6);
+                            log.warn("[DART Disclosure Parsing] 공시 원문 파싱 실패: rceptNo={}", rceptNo, e);
+                        } finally {
+                            redisUtil.unlockDisclosureParsing(rceptNo);
+                        }
+                    }
+                }, disclosureParsingPool))
+                .toList();
+
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
     }
 
-    // 파싱 결과를 각 엔티티에 반영하는 메서드
-    private void applyParsingResult(
-            IpoEvent ipoEvent,
-            IpoDisclosureParsingResult result
-    ) {
-        // 공시 원문에서 추출한 일정 정보를 ipo_events에 반영
-        ipoEvent.updateParsedSchedule(
-                result.getDemandForecastStart(),
-                result.getDemandForecastEnd(),
-                result.getRefundDate(),
-                result.getListingDate(),
-                result.getLockupExpiryDate()
-        );
+    // 테스트·수동 재파싱용 단건 호출 (DisclosureParserTestController 등에서 사용)
+    public void parseDisclosureReport(Long ipoEventId, String rceptNo) {
+        disclosureParsingExecutor.parseDisclosureReport(ipoEventId, rceptNo);
+    }
 
-        // 공모조건 조회
-        IpoOffering offering = ipoOfferingRepository.findByIpoEventId(ipoEvent.getId())
-                .orElseGet(() -> ipoOfferingRepository.save(
-                        IpoOffering.builder()
-                                .ipoEvent(ipoEvent)
-                                .build()
+    // 재파싱이 필요한 모든 IPO의 공시를 일괄 재파싱하는 메서드
+    // "재파싱이 필요한" 정의: status가 LISTED가 아니거나 listingDate가 추정값/NULL인 IPO
+    //   → 진짜 완료된 IPO는 skip, 활성 IPO + 의심스러운 LISTED는 모두 포함
+    // 잘못된 stale 추정값 때문에 LISTED로 잘못 마킹된 IPO도 다시 잡혀 정상 복원됨
+    // 같은 IPO의 공시는 순차 처리(race condition 방지), 다른 IPO끼리만 병렬
+    public void reparseAllActiveIpos() {
+        List<Object[]> reports = disclosureReportRepository
+                .findReportsForActiveIpos(IpoEventStatus.LISTED);
+
+        if (reports.isEmpty()) {
+            log.info("[DART Disclosure Parsing] 재파싱 대상 IPO 없음");
+            return;
+        }
+
+        // IPO별로 그룹핑 (Long → List<String>)
+        Map<Long, List<String>> reportsByIpo = reports.stream()
+                .collect(Collectors.groupingBy(
+                        row -> (Long) row[0],
+                        Collectors.mapping(row -> (String) row[1], Collectors.toList())
                 ));
 
-        // 파싱된 공모가, 공모주식수, 상장주식수를 공모 조건에 반영
-        offering.updateParsedOfferingInfo(
-                result.getShareCount(),
-                result.getTotalListedShares(),
-                result.getOfferPriceMin(),
-                result.getOfferPriceMax(),
-                result.getOfferPrice()
-        );
+        log.info("[DART Disclosure Parsing] 활성 IPO 재파싱 시작: {} IPO, {} 건",
+                reportsByIpo.size(), reports.size());
 
-        // 공모지표 조회
-        IpoMetric metric = ipoMetricRepository.findByIpoEventId(ipoEvent.getId())
-                .orElseGet(() -> ipoMetricRepository.save(
-                        IpoMetric.builder()
-                                .ipoEvent(ipoEvent)
-                                .build()
-                ));
+        List<CompletableFuture<Void>> futures = reportsByIpo.entrySet().stream()
+                .map(entry -> CompletableFuture.runAsync(() -> {
+                    Long ipoEventId = entry.getKey();
+                    for (String rceptNo : entry.getValue()) {
+                        try {
+                            disclosureParsingExecutor.parseDisclosureReport(ipoEventId, rceptNo);
+                        } catch (Exception e) {
+                            log.warn("[DART Disclosure Parsing] 재파싱 실패: rceptNo={}", rceptNo, e);
+                        }
+                    }
+                }, disclosureParsingPool))
+                .toList();
 
-        // 파싱된 기관경쟁률, 의무보유확약, 락업 비율을 지표에 반영
-        metric.updateParsedMetrics(
-                result.getInstitutionalCompetitionRate(),
-                result.getLockupRatio(),
-                result.getProtectiveCustodyRatio()
-        );
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+        log.info("[DART Disclosure Parsing] 활성 IPO 재파싱 완료: {} 건", reports.size());
     }
 }

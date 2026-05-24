@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 @Getter
 @NoArgsConstructor
@@ -16,6 +17,12 @@ public class AiDisclosureParsingResult {
     // 수요예측 종료일
     private String demandForecastEnd;
 
+    // 청약 시작일
+    private String subscriptionStart;
+
+    // 청약 종료일
+    private String subscriptionEnd;
+
     // 환불일
     private String refundDate;
 
@@ -24,6 +31,9 @@ public class AiDisclosureParsingResult {
 
     // 보호예수 또는 의무보유 해제일
     private String lockupExpiryDate;
+
+    // 대표 락업 기간(개월). 해제일 날짜가 없고 기간만 명시된 경우 채워짐
+    private Integer lockupPeriodMonths;
 
     // 희망 공모가 하단
     private BigDecimal offerPriceMin;
@@ -48,6 +58,9 @@ public class AiDisclosureParsingResult {
 
     // 보호예수 또는 매각제한 비율
     private BigDecimal protectiveCustodyRatio;
+
+    // 주관사·인수증권사 목록
+    private List<String> brokerNames;
 
     // AI가 판단한 간단한 근거
     // DB 저장용이 아닌 테스트 응답에서 확인하기 위함

@@ -17,7 +17,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 
 @Service
@@ -29,8 +31,23 @@ public class DartIpoSyncService {
     // DART 공시 유형 코드 - C: 발행공시 (증권신고서, 투자설명서, 증권발행실적보고서 등)
     private static final String ISSUANCE_DISCLOSURE_TYPE = "C";
 
+    // DART 법인구분 코드 - E: 기타법인 (상장 전 기업 = 신규 IPO 후보)
+    // 유상증자·합병 공시를 내는 기존 상장사(Y/K/N)를 발견 단계에서 제외하기 위함
+    private static final String NON_LISTED_CORP_CLASS = "E";
+
     // 시장 전체 공시 검색 시 페이지네이션 안전 상한
     private static final int MAX_SEARCH_PAGES = 50;
+
+    // DART 시장 전체 공시검색은 조회 기간을 약 3개월로 제한하므로, 한 번에 검색할 최대 일수
+    private static final int MAX_SEARCH_RANGE_DAYS = 80;
+
+    // 기업별 동기화 시 과거로 거슬러 조회할 개월 수
+    // estkRs는 '최초접수일' 기준으로 필터링되는데, 한 IPO는 최초 증권신고서~상장까지 수개월이 걸리므로
+    // 발견 윈도우보다 더 과거까지 봐야 최초 증권신고서를 놓치지 않는다
+    private static final int PER_COMPANY_LOOKBACK_MONTHS = 12;
+
+    // yyyyMMdd 형식 날짜 포매터
+    private static final DateTimeFormatter BASIC_DATE = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     private final DartApiClient dartApiClient;
     private final CompanyRepository companyRepository;
@@ -41,16 +58,39 @@ public class DartIpoSyncService {
     private final IpoDisclosureReportRepository disclosureReportRepository;
     private final IpoDisclosureDocumentClassifier ipoDisclosureDocumentClassifier;
 
+    // 모든 IpoEvent의 status를 오늘 날짜 기준으로 다시 계산해 DB에 반영하는 메서드
+    // 일정 정보(청약·상장일)는 그대로인데 시간이 흘러 상태가 바뀌어야 하는 경우(UPCOMING → ONGOING → CLOSED → LISTED) 처리
+    // status 컬럼으로 필터하는 쿼리(findByStatus 등)가 stale 상태로 잘못된 결과 내는 걸 방지하기 위해 매일 자정 직후 일괄 호출
+    // company/offering/metric 같은 lazy 연관관계는 건드리지 않으므로 LazyInit 안전
+    @Transactional
+    public int refreshAllIpoStatuses() {
+        LocalDate today = LocalDate.now();
+        List<IpoEvent> allEvents = ipoEventRepository.findAll();
+        int updatedCount = 0;
+        for (IpoEvent event : allEvents) {
+            IpoEventStatus next = event.resolveStatus(today);
+            if (next != event.getStatus()) {
+                event.updateStatus(next);
+                updatedCount++;
+            }
+        }
+        return updatedCount;
+    }
+
     @Transactional
     // 특정 기업의 특정 기간 공모 관련 데이터를 동기화하는 메서드
     public void syncIpoByCompany(String corpCode, String beginDate, String endDate){
         Company company = companyRepository.findByCorpCode(corpCode) // corpCode로 기업을 조회
                 .orElseThrow(() -> new CustomException(ErrorCode.COMPANY_NOT_FOUND));
 
+        // 기업별 조회는 최초 증권신고서를 놓치지 않도록 시작일을 과거로 넓힘
+        // (estkRs/공시검색이 최초접수일 기준으로 필터링되기 때문)
+        String wideBeginDate = widenBeginDate(beginDate, endDate);
+
         // DART 공시검색 API 호출
         // disclosureType -> null : 초기에는 전체 공시에서 reportNm 기준으로 증권신고서를 필터링하기 위함
         DartDisclosureSearchResponse disclosureSearchResponse = dartApiClient.searchDisclosure(
-                beginDate,
+                wideBeginDate,
                 endDate,
                 corpCode,
                 null,
@@ -67,7 +107,7 @@ public class DartIpoSyncService {
 
         // DART 지분증권 증권신고서 주요정보 API 호출: 청약기일, 납입기일, 인수기관명 등의 구조화 데이터를 얻기 위해 사용
         DartEquitySecuritiesReportResponse equityResponse =
-                dartApiClient.getEquitySecuritiesReport(corpCode, beginDate, endDate);
+                dartApiClient.getEquitySecuritiesReport(corpCode, wideBeginDate, endDate);
 
         if (equityResponse.getList() == null) {
             return; // 주요정보 목록이 없다면 더 처리할 데이터가 없으므로 메서드 종료
@@ -79,11 +119,46 @@ public class DartIpoSyncService {
         }
     }
 
+    // 기업별 조회 시작일을 PER_COMPANY_LOOKBACK_MONTHS만큼 과거로 넓히는 메서드
+    // 호출자가 더 넓은 범위를 줬다면 그 값을 그대로 사용
+    private String widenBeginDate(String beginDate, String endDate) {
+        LocalDate passedBegin = LocalDate.parse(beginDate, BASIC_DATE);
+        LocalDate widened = LocalDate.parse(endDate, BASIC_DATE).minusMonths(PER_COMPANY_LOOKBACK_MONTHS);
+        LocalDate effective = widened.isBefore(passedBegin) ? widened : passedBegin;
+        return effective.format(BASIC_DATE);
+    }
+
     // 시장 전체 발행공시를 검색해 공모주 관련 공시를 제출한 기업 고유번호(corpCode)를 수집하는 메서드
     // 스케줄러가 어떤 기업을 동기화해야 하는지 찾는 진입점으로 사용 (DB를 건드리지 않는 조회 전용)
+    // DART 시장 전체 검색은 조회 기간이 약 3개월로 제한되므로 기간을 분할해 검색한다
     public Set<String> findRecentIpoCorpCodes(String beginDate, String endDate) {
         Set<String> corpCodes = new LinkedHashSet<>();
 
+        LocalDate begin = LocalDate.parse(beginDate, BASIC_DATE);
+        LocalDate end = LocalDate.parse(endDate, BASIC_DATE);
+
+        // [begin, end]를 MAX_SEARCH_RANGE_DAYS 이하 구간으로 나눠 각 구간을 검색
+        LocalDate chunkStart = begin;
+        while (!chunkStart.isAfter(end)) {
+            LocalDate chunkEnd = chunkStart.plusDays(MAX_SEARCH_RANGE_DAYS);
+            if (chunkEnd.isAfter(end)) {
+                chunkEnd = end;
+            }
+
+            collectCorpCodesInRange(
+                    chunkStart.format(BASIC_DATE),
+                    chunkEnd.format(BASIC_DATE),
+                    corpCodes
+            );
+
+            chunkStart = chunkEnd.plusDays(1);
+        }
+
+        return corpCodes;
+    }
+
+    // 특정 기간의 시장 전체 발행공시를 페이지네이션하며 공모주 후보 기업 고유번호를 수집하는 메서드
+    private void collectCorpCodesInRange(String beginDate, String endDate, Set<String> corpCodes) {
         int pageNo = 1;
 
         while (pageNo <= MAX_SEARCH_PAGES) {
@@ -96,9 +171,12 @@ public class DartIpoSyncService {
                 break;
             }
 
-            // 공모주 관련 보고서명만 골라 기업 고유번호 수집
+            // 지분증권 증권신고서 + 상장 전 기타법인(E)만 골라 기업 고유번호 수집
+            // - 지분증권 필터: 채무증권(회사채) 등 비지분증권 증권신고서를 제외
+            // - corp_cls 필터: 기존 상장사의 유상증자·합병을 제외해 신규 IPO만 추림
             response.getList().stream()
-                    .filter(item -> ipoDisclosureDocumentClassifier.isIpoRelevantReportName(item.getReportNm()))
+                    .filter(item -> ipoDisclosureDocumentClassifier.isEquityOfferingReportName(item.getReportNm()))
+                    .filter(item -> NON_LISTED_CORP_CLASS.equals(item.getCorpCls()))
                     .map(DartDisclosureSearchResponse.Item::getCorpCode)
                     .filter(code -> code != null && !code.isBlank())
                     .forEach(corpCodes::add);
@@ -110,8 +188,6 @@ public class DartIpoSyncService {
 
             pageNo++;
         }
-
-        return corpCodes;
     }
 
     // 공시 검색 결과 1건을 ipo_disclosure_reports에 저장하거나 갱신하는 메서드
@@ -174,8 +250,8 @@ public class DartIpoSyncService {
                 allocationDate
         );
 
-        // 청약 시작/종료일 기준으로 공모 상태를 계산하여 갱신
-        ipoEvent.updateStatus(determineStatus(subscriptionStart, subscriptionEnd, null));
+        // 청약/상장 일정 기준으로 공모 상태를 계산하여 갱신
+        ipoEvent.updateStatus(ipoEvent.resolveStatus(LocalDate.now()));
 
         // 청약공고일, 배정기준일 등 공모 조건 보조 정보를 저장/갱신
         upsertOffering(ipoEvent, item);
@@ -184,13 +260,16 @@ public class DartIpoSyncService {
         upsertBroker(ipoEvent, item.getUdtintnm());
     }
 
-    // 접수번호를 기준으로 IpoEvent를 찾거나 새로 생성하는 메서드
+    // 기업을 기준으로 IpoEvent를 찾거나 새로 생성하는 메서드
+    // 한 기업의 IPO는 최초·정정 증권신고서, 투자설명서, 발행실적 등 여러 공시로 구성되므로
+    // 공시 접수번호(rceptNo) 단위가 아니라 기업 단위로 하나의 IpoEvent를 공유한다
     private IpoEvent findOrCreateIpoEvent(
             Company company,
             String rceptNo,
             String eventName
     ) {
-        return ipoEventRepository.findByMainReportRceptNo(rceptNo) // 대표 공시 접수번호 기준으로 기존 공모 이벤트 조회
+        return ipoEventRepository.findByCompanyId(company.getId()).stream()
+                .findFirst() // 해당 기업의 기존 공모 이벤트가 있으면 재사용
                 .orElseGet(() -> ipoEventRepository.save(
                         IpoEvent.builder()
                                 .company(company)
@@ -263,30 +342,6 @@ public class DartIpoSyncService {
                 );
             }
         }
-    }
-
-    // 청약일과 상장일을 기준으로 공모 이벤트 상태를 계산하는 내부 메서드
-    private IpoEventStatus determineStatus(
-            LocalDate subscriptionStart,
-            LocalDate subscriptionEnd,
-            LocalDate listingDate
-    ) {
-        LocalDate today = LocalDate.now(); // 오늘 날짜
-
-        if (listingDate != null && !listingDate.isAfter(today)) { // 상장일이 있고 상장일이 오늘 또는 과거라면 이미 상장된 상태
-            return IpoEventStatus.LISTED;
-        }
-
-        if (subscriptionStart != null && subscriptionEnd != null
-                && !today.isBefore(subscriptionStart)
-                && !today.isAfter(subscriptionEnd)) { // 오늘이 청약 시작일과 종료일 사이에 있으면 청약 진행중
-            return IpoEventStatus.ONGOING;
-        }
-
-        if (subscriptionEnd != null && subscriptionEnd.isBefore(today)) // 청약 종료일이 오늘보다 이전이면 청약은 마감된 상태
-            return IpoEventStatus.CLOSED;
-
-        return IpoEventStatus.UPCOMING; // 위 조건에 모두 해당하지 않으면 예정 상태
     }
 
 }
