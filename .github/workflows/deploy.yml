@@ -16,10 +16,14 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          # set -e 로 어느 단계든 실패하면 즉시 중단 (이전 OLD jar로 배포되는 사고 방지)
+          # set -x 로 각 단계 출력을 액션 로그에 남겨서 디버깅 가능
           script: |
+            set -ex
             cd /home/ubuntu/app
             git pull origin main
             ./gradlew clean build -x test
+            ls -l build/libs/
             docker compose down
             docker compose up -d --build
             docker image prune -f

@@ -73,3 +73,10 @@ dependencies {
 tasks.named('test') {
 	useJUnitPlatform()
 }
+
+// Spring Boot 3.x는 기본적으로 plain jar(-plain.jar)와 bootJar 둘 다 생성하는데,
+// Dockerfile의 COPY build/libs/*.jar 가 두 jar를 모두 매치해서 비결정적으로 잘못된 jar가 복사될 수 있음.
+// plain jar는 실행 불가하므로 비활성화해 혼동 차단.
+tasks.named('jar') {
+	enabled = false
+}
