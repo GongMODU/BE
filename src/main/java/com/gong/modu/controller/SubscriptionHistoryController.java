@@ -51,6 +51,30 @@ public class SubscriptionHistoryController {
         return ResponseEntity.ok(historyService.getMyHistories(userId, status));
     }
 
+    @Operation(
+            summary = "청약이력 기반 평균 수익률 요약 (기능명세서 3.3)",
+            description = """
+                    매도 완료(COMPLETED) 청약이력을 매도일 기준 월별 그룹핑해 평균 수익률을 반환합니다.
+
+                    응답 구성:
+                    - monthlyReturnRates: 매도 이력이 있는 월만 포함, 매도일 오름차순. 꺾은선 그래프 데이터로 사용.
+                    - currentMonthReturnRate / lastMonthReturnRate: 이번달·저번달 평균. 막대 비교 그래프 데이터로 사용.
+                    - trend: INCREASED/DECREASED/UNCHANGED/NO_DATA. 프론트가 이 값으로 안내 메시지 분기.
+
+                    수익률 계산: ((sellPrice - offerPrice) × allocatedQuantity - fee - tax) / (offerPrice × allocatedQuantity) × 100
+                    필수 값(sellPrice/offerPrice/allocatedQuantity) 중 하나라도 없으면 해당 이력은 계산에서 제외됩니다.
+
+                    months 파라미터: 1~24 범위, 기본 6. 범위 밖이면 400 응답.
+                    """
+    )
+    @GetMapping("/return-rate")
+    public ResponseEntity<ReturnRateSummaryResponse> getReturnRateSummary(
+            @AuthenticationPrincipal Long userId,
+            @RequestParam(defaultValue = "6") int months
+    ) {
+        return ResponseEntity.ok(historyService.getReturnRateSummary(userId, months));
+    }
+
     @Operation(summary = "청약 이력 단건 조회")
     @GetMapping("/{historyId}")
     public ResponseEntity<SubscriptionHistoryResponse> getHistory(
