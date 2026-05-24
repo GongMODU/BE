@@ -14,6 +14,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.List;
 
 // 청약 이력 (4.1 과거 투자 이력 + 4.2 현재 청약 중 이력) 관리 서비스
@@ -21,9 +23,14 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SubscriptionHistoryService {
 
+    // 평균 수익률 그래프 기간 파라미터의 허용 범위 (1~24개월)
+    private static final int MIN_MONTHS = 1;
+    private static final int MAX_MONTHS = 24;
+
     private final UserRepository userRepository;
     private final IpoEventRepository ipoEventRepository;
     private final UserSubscriptionHistoryRepository historyRepository;
+    private final ReturnRateCalculator returnRateCalculator;
 
     // 4.1 과거 투자 이력 생성 (DB 종목 조회 없이 사용자 직접 입력, status = COMPLETED)
     @Transactional
@@ -38,6 +45,7 @@ public class SubscriptionHistoryService {
                 .securityCompany(request.getSecurityCompany())
                 .subscribedQuantity(request.getSubscribedQuantity())
                 .allocatedQuantity(request.getAllocatedQuantity())
+                .offerPrice(request.getOfferPrice())
                 .sellPrice(request.getSellPrice())
                 .fee(request.getFee())
                 .tax(request.getTax())
@@ -82,6 +90,32 @@ public class SubscriptionHistoryService {
         return histories.stream()
                 .map(SubscriptionHistoryResponse::from)
                 .toList();
+    }
+
+    // 청약이력 기반 평균 수익률 요약 조회 (기능명세서 3.3)
+    // 최근 months 개월의 COMPLETED 이력을 매도일 기준 월별 그룹핑 → 평균 수익률 + 이번달/저번달 트렌드 반환
+    @Transactional(readOnly = true)
+    public ReturnRateSummaryResponse getReturnRateSummary(Long userId, int months) {
+        if (months < MIN_MONTHS || months > MAX_MONTHS) {
+            throw new CustomException(ErrorCode.SUBSCRIPTION_HISTORY_INVALID_INPUT);
+        }
+
+        User user = getUser(userId);
+
+        LocalDate today = LocalDate.now();
+        // months - 1 인 이유: 이번달 포함해서 총 months 개월이 되도록
+        // 예: months=6, today=2026-05-24 → from = 2025-12-01 (12월~5월 = 6개월)
+        YearMonth fromYearMonth = YearMonth.from(today).minusMonths(months - 1L);
+        LocalDate fromDate = fromYearMonth.atDay(1);
+
+        List<UserSubscriptionHistory> histories = historyRepository
+                .findByUserAndRecordStatusAndSellDateGreaterThanEqual(
+                        user,
+                        SubscriptionRecordStatus.COMPLETED,
+                        fromDate
+                );
+
+        return returnRateCalculator.summarize(histories, months, today);
     }
 
     // 단건 조회

@@ -40,6 +40,11 @@ public class CompletedHistoryCreateRequest {
     @PositiveOrZero
     private Long allocatedQuantity;
 
+    @Schema(description = "공모가(1주당). 수익률 계산의 기준값이므로 반드시 입력 권장. 누락 시 수익률 계산에서 제외됨",
+            example = "20000")
+    @PositiveOrZero
+    private BigDecimal offerPrice;
+
     @Schema(description = "매도 단가", example = "50000")
     @PositiveOrZero
     private BigDecimal sellPrice;
