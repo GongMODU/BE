@@ -16,12 +16,15 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          # set -e 로 어느 단계든 실패하면 즉시 중단 (이전 OLD jar로 배포되는 사고 방지)
-          # set -x 로 각 단계 출력을 액션 로그에 남겨서 디버깅 가능
+          # set -ex: 어느 단계든 실패하면 즉시 중단 + 각 단계 출력 로그화
+          # git fetch + reset --hard: EC2 로컬에 어떤 변경이 남아 있어도 강제로 origin/main과 동일하게 동기화
+          #   (이전에 divergent 상태로 git pull이 silent 실패하던 사고 방지)
           script: |
             set -ex
             cd /home/ubuntu/app
-            git pull origin main
+            git fetch origin main
+            git reset --hard origin/main
+            git clean -fd
             ./gradlew clean build -x test
             ls -l build/libs/
             docker compose down
