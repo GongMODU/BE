@@ -1,5 +1,6 @@
 package com.gong.modu.domain.dto.user;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
@@ -15,44 +16,45 @@ import java.time.LocalDate;
 @Getter
 @Setter
 @NoArgsConstructor
+@Schema(description = "4.1 과거 투자 이력 생성 요청 (DB 종목 조회 없이 직접 입력, COMPLETED 상태로 저장)")
 public class CompletedHistoryCreateRequest {
 
-    // 종목명 (필수, 직접 입력)
+    @Schema(description = "종목명 (필수, 사용자 직접 입력)", example = "테스트종목", requiredMode = Schema.RequiredMode.REQUIRED)
     @NotBlank
     @Size(max = 200)
     private String inputStockName;
 
-    // 회사명 (선택, 직접 입력)
+    @Schema(description = "회사명 (선택, 사용자 직접 입력)", example = "테스트회사")
     @Size(max = 200)
     private String inputCompanyName;
 
-    // 증권사 (선택)
+    @Schema(description = "청약한 증권사", example = "삼성증권")
     @Size(max = 100)
     private String securityCompany;
 
-    // 청약 수량
+    @Schema(description = "청약 신청 주식 수", example = "100")
     @PositiveOrZero
     private Long subscribedQuantity;
 
-    // 배정 수량
+    @Schema(description = "실제 배정받은 주식 수", example = "10")
     @PositiveOrZero
     private Long allocatedQuantity;
 
-    // 매도가
+    @Schema(description = "매도 단가", example = "50000")
     @PositiveOrZero
     private BigDecimal sellPrice;
 
-    // 수수료
+    @Schema(description = "청약 또는 매도 수수료", example = "500")
     @PositiveOrZero
     private BigDecimal fee;
 
-    // 제세금
+    @Schema(description = "매도 시 발생한 세금", example = "750")
     @PositiveOrZero
     private BigDecimal tax;
 
-    // 매도일
+    @Schema(description = "매도일", example = "2026-04-15")
     private LocalDate sellDate;
 
-    // 기타 비고
+    @Schema(description = "사용자 메모 / 비고", example = "장기 보유 후 매도")
     private String memo;
 }
