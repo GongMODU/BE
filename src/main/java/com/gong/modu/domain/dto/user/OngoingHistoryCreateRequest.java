@@ -1,5 +1,6 @@
 package com.gong.modu.domain.dto.user;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
@@ -14,28 +15,31 @@ import java.math.BigDecimal;
 @Getter
 @Setter
 @NoArgsConstructor
+@Schema(description = "4.2 현재 청약 중 이력 생성 요청 (DB 등록된 IpoEvent와 연결 필수, ONGOING 상태로 저장)")
 public class OngoingHistoryCreateRequest {
 
-    // 청약한 공모주 IpoEvent ID (필수, DB에 존재해야 함)
+    @Schema(description = "청약한 공모주 IpoEvent ID. /api/ipo/search 검색 결과의 ipoEventId 값을 사용",
+            example = "281",
+            requiredMode = Schema.RequiredMode.REQUIRED)
     @NotNull
     private Long ipoEventId;
 
-    // 청약 증권사
+    @Schema(description = "청약한 증권사", example = "NH투자증권")
     @Size(max = 100)
     private String securityCompany;
 
-    // 청약 수량
+    @Schema(description = "청약 신청 주식 수", example = "50")
     @PositiveOrZero
     private Long subscribedQuantity;
 
-    // 청약 시 공모가
+    @Schema(description = "청약 시 공모가", example = "21500")
     @PositiveOrZero
     private BigDecimal offerPrice;
 
-    // 청약에 투입한 금액
+    @Schema(description = "청약에 투입한 금액", example = "1075000")
     @PositiveOrZero
     private BigDecimal subscriptionAmount;
 
-    // 메모
+    @Schema(description = "사용자 메모", example = "수요예측 결과 좋아서 청약")
     private String memo;
 }
