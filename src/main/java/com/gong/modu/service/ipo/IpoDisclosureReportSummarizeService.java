@@ -103,6 +103,21 @@ public class IpoDisclosureReportSummarizeService {
         }
 
         sb.append("\n## 공모 일정\n");
+        if (ipoEvent.getDemandForecastStart() != null) {
+            sb.append("- 수요예측 시작일: ").append(ipoEvent.getDemandForecastStart()).append("\n");
+        }
+        if (ipoEvent.getDemandForecastEnd() != null) {
+            sb.append("- 수요예측 종료일: ").append(ipoEvent.getDemandForecastEnd()).append("\n");
+        }
+        if (ipoEvent.getSubscriptionStartDate() != null) {
+            sb.append("- 청약 시작일: ").append(ipoEvent.getSubscriptionStartDate()).append("\n");
+        }
+        if (ipoEvent.getSubscriptionEndDate() != null) {
+            sb.append("- 청약 종료일: ").append(ipoEvent.getSubscriptionEndDate()).append("\n");
+        }
+        if (ipoEvent.getRefundDate() != null) {
+            sb.append("- 환불일: ").append(ipoEvent.getRefundDate()).append("\n");
+        }
         if (ipoEvent.getListingDate() != null) {
             sb.append("- 상장일: ").append(ipoEvent.getListingDate()).append("\n");
         }
@@ -140,19 +155,35 @@ public class IpoDisclosureReportSummarizeService {
             boolean hasMetricData = metric.getInstitutionalCompetitionRate() != null
                     || metric.getLockupRatio() != null
                     || metric.getGeneralSubscriptionRate() != null
+                    || metric.getProportionalCompetitionRate() != null
+                    || metric.getProtectiveCustodyRatio() != null
+                    || metric.getCirculatingSharesRatio() != null
                     || metric.getSignalLevel() != null;
             if (hasMetricData) {
                 sb.append("\n## 공모 지표\n");
                 if (metric.getInstitutionalCompetitionRate() != null) {
                     sb.append("- 기관경쟁률: ").append(metric.getInstitutionalCompetitionRate()).append(":1\n");
                 }
+                if (metric.getGeneralSubscriptionRate() != null) {
+                    sb.append("- 일반청약 경쟁률: ").append(metric.getGeneralSubscriptionRate()).append(":1\n");
+                }
+                if (metric.getProportionalCompetitionRate() != null) {
+                    sb.append("- 비례배정 경쟁률: ").append(metric.getProportionalCompetitionRate()).append(":1\n");
+                }
                 if (metric.getLockupRatio() != null) {
                     sb.append("- 의무보유확약 비율: ")
                             .append(metric.getLockupRatio().multiply(BigDecimal.valueOf(100)).stripTrailingZeros().toPlainString())
                             .append("%\n");
                 }
-                if (metric.getGeneralSubscriptionRate() != null) {
-                    sb.append("- 일반청약 경쟁률: ").append(metric.getGeneralSubscriptionRate()).append(":1\n");
+                if (metric.getProtectiveCustodyRatio() != null) {
+                    sb.append("- 보호예수 비율: ")
+                            .append(metric.getProtectiveCustodyRatio().multiply(BigDecimal.valueOf(100)).stripTrailingZeros().toPlainString())
+                            .append("%\n");
+                }
+                if (metric.getCirculatingSharesRatio() != null) {
+                    sb.append("- 유통가능물량 비율: ")
+                            .append(metric.getCirculatingSharesRatio().multiply(BigDecimal.valueOf(100)).stripTrailingZeros().toPlainString())
+                            .append("%\n");
                 }
                 if (metric.getSignalLevel() != null) {
                     sb.append("- 신호등 등급: ").append(metric.getSignalLevel()).append("\n");
