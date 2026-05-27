@@ -22,9 +22,10 @@ import java.util.List;
 public class IpoDisclosureReportQueryService {
 
     private final IpoDisclosureReportRepository reportRepository;
+    private final IpoDisclosureReportSummarizeService summarizeService;
     private final ObjectMapper objectMapper;
 
-    @Transactional(readOnly = true)
+    @Transactional
     public IpoDisclosureReportResponse getDisclosureReport(Long ipoEventId) {
         List<IpoDisclosureReport> reports = reportRepository.findByIpoEventId(ipoEventId);
 
@@ -33,20 +34,22 @@ public class IpoDisclosureReportQueryService {
         }
 
         IpoDisclosureReport report = reports.get(0);
+
+        // 요약이 없으면 그 자리에서 생성 (최초 1회만 느림, 이후 DB 캐시)
+        if (report.getCompanySummary() == null) {
+            try {
+                summarizeService.summarize(report.getId());
+                report = reportRepository.findById(report.getId())
+                        .orElseThrow(() -> new CustomException(ErrorCode.DISCLOSURE_REPORT_NOT_FOUND));
+            } catch (Exception e) {
+                log.warn("[Disclosure] 온디맨드 요약 실패 reportId={}: {}", report.getId(), e.getMessage());
+            }
+        }
+
         IpoEvent ipoEvent = report.getIpoEvent();
         Company company = ipoEvent.getCompany();
         boolean isSpac = company.getCorpName().contains("스팩")
                 || company.getCorpName().toUpperCase().contains("SPAC");
-
-        if (report.getCompanySummary() == null) {
-            return IpoDisclosureReportResponse.builder()
-                    .companyName(company.getCorpName())
-                    .isSpac(isSpac)
-                    .establishedAt(company.getEstablishedAt())
-                    .listingDate(ipoEvent.getListingDate())
-                    .summaryVersion(report.getSummaryVersion())
-                    .build();
-        }
 
         return IpoDisclosureReportResponse.builder()
                 .companyName(company.getCorpName())
