@@ -17,9 +17,9 @@ public class IpoDisclosureReportResponse {
     private LocalDate establishedAt;
     private LocalDate listingDate;
 
-    // AI 요약 필드
-    private String companySummary;
-    private String financialSummary;
+    // AI 요약 필드 (각 문장을 배열 원소로 반환)
+    private List<String> companySummary;
+    private List<String> financialSummary;
 
     // 투자자 보호 안전장치 요약 (SPAC/일반 공모주 모두 항상 존재)
     private SummarySection investorProtectionSummary;

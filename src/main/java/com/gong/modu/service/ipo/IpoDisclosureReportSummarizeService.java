@@ -65,8 +65,8 @@ public class IpoDisclosureReportSummarizeService {
         if (result == null) return;
 
         report.updateSummary(
-                result.getCompanySummary(),
-                result.getFinancialSummary(),
+                serializeStringList(result.getCompanySummary()),
+                serializeStringList(result.getFinancialSummary()),
                 serializeSummarySection(result.getInvestorProtectionSummary()),
                 serializeSummarySection(result.getMergerInfoSummary()),
                 serializeRiskItems(result.getRiskSummary()),
@@ -243,6 +243,16 @@ public class IpoDisclosureReportSummarizeService {
             return objectMapper.writeValueAsString(section);
         } catch (JsonProcessingException e) {
             log.warn("[IpoSummarize] SummarySection 직렬화 실패: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private String serializeStringList(List<String> lines) {
+        if (lines == null || lines.isEmpty()) return null;
+        try {
+            return objectMapper.writeValueAsString(lines);
+        } catch (JsonProcessingException e) {
+            log.warn("[IpoSummarize] 문장 배열 직렬화 실패: {}", e.getMessage());
             return null;
         }
     }

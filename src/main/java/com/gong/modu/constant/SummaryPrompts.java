@@ -47,11 +47,11 @@ public final class SummaryPrompts {
             "- 숫자 수치는 직접 나열하지 마세요. 수치는 프론트에서 별도 표시합니다.\n\n" +
             "## 필드별 규칙\n\n" +
             "### 1. companySummary\n" +
-            "- 형식: 2~3문장, 100자 이내\n" +
+            "- 형식: 문장 배열, 2~3개 문장, 각 문장 50자 이내\n" +
             "- 내용: 기업 유형(SPAC 여부), 주요 사업 또는 목적, 설립일과 상장일\n" +
             "- 톤: 중립적, 사실 전달\n\n" +
             "### 2. financialSummary\n" +
-            "- 형식: 서술형 텍스트, 150자 이내\n" +
+            "- 형식: 문장 배열, 2~3개 문장, 각 문장 75자 이내\n" +
             "- 내용: 재무 상태 전반을 관통하는 맥락 위주 설명. 수치 자체는 나열하지 말 것\n" +
             "- 톤: \"왜 이런 수치인지\" 맥락 중심\n\n" +
             "### 3. investorProtectionSummary\n" +
@@ -88,8 +88,8 @@ public final class SummaryPrompts {
             "## 출력 형식\n" +
             "아래 JSON만 반환. 다른 텍스트, 설명, 마크다운 코드블록(```) 없이 순수 JSON만 반환.\n\n" +
             "{\n" +
-            "  \"companySummary\": \"string\",\n" +
-            "  \"financialSummary\": \"string\",\n" +
+            "  \"companySummary\": [\"string\", \"string\"],\n" +
+            "  \"financialSummary\": [\"string\", \"string\"],\n" +
             "  \"investorProtectionSummary\": {\n" +
             "    \"highlight\": \"string\",\n" +
             "    \"items\": [\n" +

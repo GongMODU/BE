@@ -53,13 +53,23 @@ public class IpoDisclosureReportQueryService {
                 .isSpac(isSpac)
                 .establishedAt(company.getEstablishedAt())
                 .listingDate(ipoEvent.getListingDate())
-                .companySummary(report.getCompanySummary())
-                .financialSummary(report.getFinancialSummary())
+                .companySummary(deserializeStringList(report.getCompanySummary()))
+                .financialSummary(deserializeStringList(report.getFinancialSummary()))
                 .investorProtectionSummary(deserializeSummarySection(report.getInvestorProtectionSummary()))
                 .mergerInfoSummary(deserializeSummarySection(report.getInvestmentPointSummary()))
                 .riskSummary(deserializeRiskItems(report.getRiskSummary()))
                 .summaryVersion(report.getSummaryVersion())
                 .build();
+    }
+
+    private List<String> deserializeStringList(String json) {
+        if (json == null) return null;
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<String>>() {});
+        } catch (Exception e) {
+            log.warn("문장 배열 역직렬화 실패: {}", e.getMessage());
+            return null;
+        }
     }
 
     private IpoDisclosureReportResponse.SummarySection deserializeSummarySection(String json) {
