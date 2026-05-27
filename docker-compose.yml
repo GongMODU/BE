@@ -82,11 +82,11 @@ services:
       KIS_APP_KEY: ${KIS_APP_KEY}
       KIS_APP_SECRET: ${KIS_APP_SECRET}
       # JVM heap 상한 + DART API (opendart.fss.or.kr) SSL handshake_failure 회피
-      # 진단 결과: DART 는 TLS_RSA_WITH_AES_128_GCM_SHA256 (RSA-only cipher) 만 받는데
-      # Java 17 이 보안상 RSA-only cipher 를 기본 disabledAlgorithms 에 포함시켜
-      # 협상 단계에서 제외 → 매치 cipher 없음 → handshake_failure 발생.
-      # 해결: disabledAlgorithms 에서 RSA 관련 제거. TLSv1/v1.1 같은 진짜 위험한 것만 유지.
-      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx512m -Djdk.tls.client.protocols=TLSv1.2 -Djdk.tls.namedGroups=secp256r1,secp384r1,secp521r1 -Djdk.tls.disabledAlgorithms=SSLv3,TLSv1,TLSv1.1,RC4,DES,MD5withRSA,DH keySize < 1024,EC keySize < 224,3DES_EDE_CBC,anon,NULL"
+      # - TLSv1.2 강제 (DART 가 TLSv1.3 ClientHello 거부)
+      # - namedGroups 제한 (Java 17 신규 EC curves 제외)
+      # - disabledAlgorithms 변경은 JAVA_TOOL_OPTIONS 로 전달 불가(값에 공백 포함됨)
+      #   → ModuApplication.main() 에서 Security.setProperty() 로 직접 설정
+      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx512m -Djdk.tls.client.protocols=TLSv1.2 -Djdk.tls.namedGroups=secp256r1,secp384r1,secp521r1"
 
     ports:
       - "8080:8080"
