@@ -50,4 +50,11 @@ public class ApiUsageSummary {
         this.estimatedCostUsd = this.estimatedCostUsd.add(callCost);
         this.lastUpdated = LocalDateTime.now();
     }
+
+    public void resetUsage() {
+        this.totalInputTokens = 0L;
+        this.totalOutputTokens = 0L;
+        this.estimatedCostUsd = BigDecimal.ZERO;
+        this.lastUpdated = LocalDateTime.now();
+    }
 }

@@ -53,6 +53,19 @@ public class ClaudeUsageGuard {
         }
     }
 
+    // 재결제 후 사용량 초기화
+    @Transactional
+    public BigDecimal resetUsage() {
+        ApiUsageSummary summary = usageSummaryRepository.findForUpdate()
+                .orElseThrow(() -> new CustomException(ErrorCode.INTERNAL_SERVER_ERROR));
+
+        BigDecimal previousCost = summary.getEstimatedCostUsd();
+        summary.resetUsage();
+
+        log.info("[ClaudeUsageGuard] 사용량 초기화 완료 - 이전 누적 비용: ${}", previousCost);
+        return previousCost;
+    }
+
     // Claude API 호출 후 토큰 사용량 누적 기록
     @Transactional
     public void recordUsage(long inputTokens, long outputTokens) {
