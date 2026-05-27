@@ -3,25 +3,50 @@ package com.gong.modu.controller;
 import com.gong.modu.domain.entity.ipo.IpoDisclosureReport;
 import com.gong.modu.repository.ipo.IpoDisclosureReportRepository;
 import com.gong.modu.service.ipo.IpoDisclosureReportSummarizeService;
+import com.gong.modu.service.pipeline.DartCompanySyncService;
+import com.gong.modu.service.pipeline.DartDisclosureParsingService;
+import com.gong.modu.service.pipeline.DartIpoSyncService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
+// IPO 운영 관리자용 컨트롤러
+// 모든 endpoint 는 X-IPO-ADMIN-KEY 헤더 필수 (IpoAdminApiKeyFilter 가 검증)
+// 새벽 스케줄러 외에 운영 환경에서 수동 트리거가 필요한 작업들을 모은다.
+@Tag(name = "IpoAdmin", description = "IPO 운영 관리자 전용 (X-IPO-ADMIN-KEY 헤더 필수)")
 @Slf4j
 @RestController
 @RequiredArgsConstructor
 public class IpoAdminController {
 
+    private static final DateTimeFormatter BASIC_DATE = DateTimeFormatter.ofPattern("yyyyMMdd");
+
     private final IpoDisclosureReportRepository reportRepository;
     private final IpoDisclosureReportSummarizeService summarizeService;
+    private final DartIpoSyncService dartIpoSyncService;
+    private final DartCompanySyncService dartCompanySyncService;
+    private final DartDisclosureParsingService dartDisclosureParsingService;
 
-    // 특정 공모 이벤트의 공시 요약을 즉시 강제 재생성하는 관리자용 API
-    // 기존 summary 데이터가 있어도 덮어씀
+    @Operation(
+            summary = "특정 IPO의 공시 요약 강제 재생성",
+            description = "기존 summary 데이터를 덮어쓰며 재요약. 요약 알고리즘 변경 후 수동 트리거 용도."
+    )
     @PostMapping("/admin/ipo/{ipoEventId}/summarize")
     public Map<String, String> summarize(@PathVariable Long ipoEventId) {
         List<IpoDisclosureReport> reports = reportRepository.findByIpoEventId(ipoEventId);
@@ -44,5 +69,136 @@ public class IpoAdminController {
         }
 
         return Map.of("message", "요약 완료 (성공: " + success + "건, 실패: " + fail + "건)");
+    }
+
+    @Operation(
+            summary = "최근 IPO 공시 발견·기업·IPO 데이터 동기화",
+            description = """
+                    DART 시장 전체 공시에서 공모주 관련 기업을 찾아 기업 정보 + IPO 메타 데이터를 DB에 동기화한다.
+                    스케줄러 syncIpoData()(매일 새벽 1시) 와 동일 작업의 수동 트리거 버전.
+                    beginDate/endDate 미지정 시 최근 35일, limit 지정 시 동기화 기업 수 제한.
+                    """
+    )
+    @PostMapping("/api/admin/ipo/sync-recent-ipos")
+    public ResponseEntity<Map<String, Object>> syncRecentIpos(
+            @Parameter(description = "조회 시작일 (yyyyMMdd, 미지정 시 35일 전)")
+            @RequestParam(required = false) String beginDate,
+            @Parameter(description = "조회 종료일 (yyyyMMdd, 미지정 시 오늘)")
+            @RequestParam(required = false) String endDate,
+            @Parameter(description = "동기화할 최대 기업 수 (미지정 시 발견된 전부)")
+            @RequestParam(required = false) Integer limit
+    ) {
+        LocalDate today = LocalDate.now();
+        String end = endDate != null ? endDate : today.format(BASIC_DATE);
+        String begin = beginDate != null ? beginDate : today.minusDays(35).format(BASIC_DATE);
+
+        Set<String> corpCodes = dartIpoSyncService.findRecentIpoCorpCodes(begin, end);
+
+        List<String> synced = new ArrayList<>();
+        List<String> failed = new ArrayList<>();
+        int count = 0;
+
+        for (String corpCode : corpCodes) {
+            if (limit != null && count >= limit) break;
+            try {
+                dartCompanySyncService.syncCompany(corpCode);
+                dartIpoSyncService.syncIpoByCompany(corpCode, begin, end);
+                synced.add(corpCode);
+            } catch (Exception e) {
+                log.warn("[IpoAdmin] sync 실패 corpCode={}: {}", corpCode, e.getMessage());
+                failed.add(corpCode + ": " + e.getMessage());
+            }
+            count++;
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("discoveredCount", corpCodes.size());
+        result.put("syncedCount", synced.size());
+        result.put("failedCount", failed.size());
+        result.put("syncedCorpCodes", synced);
+        if (!failed.isEmpty()) result.put("failed", failed);
+
+        return ResponseEntity.ok(result);
+    }
+
+    @Operation(
+            summary = "미파싱 공시 ZIP 다운로드 + AI 파싱",
+            description = """
+                    original_text 가 NULL 인 공시들을 limit 만큼 가져와 ZIP 다운로드 → AI 파싱 → DB 반영.
+                    스케줄러 parseUnparsedDartDisclosureDocuments()(새벽 2시, 오전 8시) 와 동일.
+                    Claude 크레딧 충전 직후 등 수동 보강 용도.
+                    """
+    )
+    @PostMapping("/api/admin/ipo/parse-unparsed")
+    public ResponseEntity<Map<String, Object>> parseUnparsed(
+            @Parameter(description = "한 번에 파싱할 미파싱 공시 건수 (기본 50)")
+            @RequestParam(defaultValue = "50") int limit
+    ) {
+        dartDisclosureParsingService.parseUnparsedDisclosureReports(limit);
+        return ResponseEntity.ok(Map.of(
+                "message", "미파싱 공시 파싱 시도 완료 (limit=" + limit + ")"
+        ));
+    }
+
+    @Operation(
+            summary = "활성 IPO 일괄 재파싱",
+            description = """
+                    status != LISTED 이거나 listingDate 가 추정값/NULL 인 모든 IPO 공시를 일괄 재파싱.
+                    스케줄러 reparseActiveIpos()(새벽 3시) 와 동일 작업.
+                    AI 프롬프트나 추출 로직 개선 후 기존 데이터 보정 용도.
+                    """
+    )
+    @PostMapping("/api/admin/ipo/reparse-all-active")
+    public ResponseEntity<Map<String, String>> reparseAllActive() {
+        dartDisclosureParsingService.reparseAllActiveIpos();
+        return ResponseEntity.ok(Map.of("message", "활성 IPO 일괄 재파싱 시도 완료"));
+    }
+
+    @Operation(
+            summary = "특정 IpoEvent 공시 전체 강제 재파싱",
+            description = "해당 IPO 의 모든 rceptNo 를 순회하며 다시 파싱. 특정 IPO 만 보정할 때."
+    )
+    @PostMapping("/api/admin/ipo/reparse-by-event/{ipoEventId}")
+    public ResponseEntity<Map<String, Object>> reparseByEvent(@PathVariable Long ipoEventId) {
+        List<String> rceptNos = reportRepository.findRceptNosByIpoEventId(ipoEventId);
+
+        List<String> reparsed = new ArrayList<>();
+        List<String> failed = new ArrayList<>();
+
+        for (String rceptNo : rceptNos) {
+            try {
+                dartDisclosureParsingService.parseDisclosureReport(ipoEventId, rceptNo);
+                reparsed.add(rceptNo);
+            } catch (Exception e) {
+                log.warn("[IpoAdmin] reparse 실패 rceptNo={}: {}", rceptNo, e.getMessage());
+                failed.add(rceptNo + ": " + e.getMessage());
+            }
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("ipoEventId", ipoEventId);
+        result.put("totalReports", rceptNos.size());
+        result.put("reparsedCount", reparsed.size());
+        result.put("failedCount", failed.size());
+        result.put("reparsed", reparsed);
+        if (!failed.isEmpty()) result.put("failed", failed);
+
+        return ResponseEntity.ok(result);
+    }
+
+    @Operation(
+            summary = "IPO 상태 일괄 재계산",
+            description = """
+                    모든 IpoEvent 의 status 를 오늘 날짜 기준으로 다시 계산해 DB 에 반영.
+                    스케줄러 refreshIpoStatuses()(매일 00:30) 와 동일 작업. UPCOMING↔ONGOING↔CLOSED↔LISTED 전이 보정.
+                    """
+    )
+    @PostMapping("/api/admin/ipo/refresh-statuses")
+    public ResponseEntity<Map<String, Object>> refreshStatuses() {
+        int updated = dartIpoSyncService.refreshAllIpoStatuses();
+        return ResponseEntity.ok(Map.of(
+                "updatedCount", updated,
+                "message", "IPO 상태 재계산 완료 (" + updated + " 건 변경)"
+        ));
     }
 }
