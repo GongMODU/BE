@@ -82,12 +82,11 @@ services:
       KIS_APP_KEY: ${KIS_APP_KEY}
       KIS_APP_SECRET: ${KIS_APP_SECRET}
       # JVM heap 상한 + DART API (opendart.fss.or.kr) SSL handshake_failure 회피
-      # - TLSv1.2 강제: 일부 한국 정부 API 가 TLSv1.3 ClientHello 거부
-      # - namedGroups 제한: Java 17 의 신규 EC curves(x25519/x448/ffdhe*) 일부를 DART 가 거부 →
-      #   보편적인 secp256r1/secp384r1/secp521r1 만 사용하도록 제한
-      # (실제로는 build.gradle 의 netty-tcnative-boringssl-static 이 우선 사용되어
-      #  Netty 가 BoringSSL 로 협상하지만, JDK SSL 로 fallback 되는 경로 대비)
-      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx512m -Djdk.tls.client.protocols=TLSv1.2 -Djdk.tls.namedGroups=secp256r1,secp384r1,secp521r1"
+      # 진단 결과: DART 는 TLS_RSA_WITH_AES_128_GCM_SHA256 (RSA-only cipher) 만 받는데
+      # Java 17 이 보안상 RSA-only cipher 를 기본 disabledAlgorithms 에 포함시켜
+      # 협상 단계에서 제외 → 매치 cipher 없음 → handshake_failure 발생.
+      # 해결: disabledAlgorithms 에서 RSA 관련 제거. TLSv1/v1.1 같은 진짜 위험한 것만 유지.
+      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx512m -Djdk.tls.client.protocols=TLSv1.2 -Djdk.tls.namedGroups=secp256r1,secp384r1,secp521r1 -Djdk.tls.disabledAlgorithms=SSLv3,TLSv1,TLSv1.1,RC4,DES,MD5withRSA,DH keySize < 1024,EC keySize < 224,3DES_EDE_CBC,anon,NULL"
 
     ports:
       - "8080:8080"
