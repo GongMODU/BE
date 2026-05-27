@@ -2,6 +2,8 @@ package com.gong.modu.service.pipeline;
 
 import com.gong.modu.domain.entity.ipo.IpoDisclosureReport;
 import com.gong.modu.domain.enums.ipo.IpoEventStatus;
+import com.gong.modu.exception.CustomException;
+import com.gong.modu.exception.ErrorCode;
 import com.gong.modu.repository.ipo.IpoDisclosureReportRepository;
 import com.gong.modu.util.RedisUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -75,8 +77,12 @@ public class DartDisclosureParsingService {
                             disclosureParsingExecutor.parseDisclosureReport(
                                     report.getIpoEvent().getId(), rceptNo);
                         } catch (Exception e) {
-                            redisUtil.markDisclosureParsingFailed(rceptNo, 6);
-                            log.warn("[DART Disclosure Parsing] 공시 원문 파싱 실패: rceptNo={}", rceptNo, e);
+                            // DART에 ZIP 원문 자체가 없는 케이스(status 014)는 등록될 때까지 영구적 실패이므로 긴 TTL
+                            // 그 외 일시적 오류(네트워크/일부 다운로드 실패 등)는 짧은 TTL로 재시도 허용
+                            long failureTtlHours = isPermanentDartFailure(e) ? 24 * 7 : 6;
+                            redisUtil.markDisclosureParsingFailed(rceptNo, failureTtlHours);
+                            log.warn("[DART Disclosure Parsing] 공시 원문 파싱 실패 (재시도 TTL={}h): rceptNo={}",
+                                    failureTtlHours, rceptNo, e);
                         } finally {
                             redisUtil.unlockDisclosureParsing(rceptNo);
                         }
@@ -85,6 +91,12 @@ public class DartDisclosureParsingService {
                 .toList();
 
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+    }
+
+    // DART에 ZIP이 영구적으로 없는 케이스인지 판별 (긴 TTL 적용 대상)
+    private boolean isPermanentDartFailure(Throwable e) {
+        return e instanceof CustomException ce
+                && ce.getErrorCode() == ErrorCode.DART_DOCUMENT_NOT_AVAILABLE;
     }
 
     // 테스트·수동 재파싱용 단건 호출 (DisclosureParserTestController 등에서 사용)

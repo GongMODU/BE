@@ -5,7 +5,9 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Component
 @RequiredArgsConstructor
@@ -119,5 +121,30 @@ public class RedisUtil {
         return Boolean.TRUE.equals(
                 redisTemplate.hasKey(DISCLOSURE_PARSE_FAILED_PREFIX + rceptNo)
         );
+    }
+
+    // 특정 공시 접수번호의 파싱 실패 캐시를 즉시 삭제
+    public void clearDisclosureParsingFailedKey(String rceptNo) {
+        redisTemplate.delete(DISCLOSURE_PARSE_FAILED_PREFIX + rceptNo);
+    }
+
+    // 모든 공시 파싱 실패 캐시를 일괄 삭제
+    // DART 연결 오류 수정 후 즉시 재시도할 때 사용 (6시간 TTL 만료 전 수동 초기화)
+    public int clearAllDisclosureParsingFailedKeys() {
+        Set<String> keys = redisTemplate.keys(DISCLOSURE_PARSE_FAILED_PREFIX + "*");
+        if (keys == null || keys.isEmpty()) {
+            return 0;
+        }
+        redisTemplate.delete(keys);
+        return keys.size();
+    }
+
+    // 특정 rceptNo 목록의 파싱 실패 캐시를 삭제
+    public int clearDisclosureParsingFailedKeys(List<String> rceptNos) {
+        List<String> keys = rceptNos.stream()
+                .map(rceptNo -> DISCLOSURE_PARSE_FAILED_PREFIX + rceptNo)
+                .toList();
+        Long deleted = redisTemplate.delete(keys);
+        return deleted != null ? deleted.intValue() : 0;
     }
 }

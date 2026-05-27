@@ -1,13 +1,16 @@
 package com.gong.modu.service.ipo;
 
 import com.gong.modu.domain.dto.ipo.IpoFinancialResponse;
+import com.gong.modu.domain.dto.ipo.IpoFinancialStatusResponse;
 import com.gong.modu.domain.entity.ipo.CompanyFinancialHighlight;
 import com.gong.modu.domain.entity.ipo.IpoEvent;
+import com.gong.modu.domain.enums.ipo.FinancialDataUnavailableReason;
 import com.gong.modu.domain.enums.ipo.FinancialStatementType;
 import com.gong.modu.domain.enums.ipo.ReportCode;
 import com.gong.modu.exception.CustomException;
 import com.gong.modu.exception.ErrorCode;
 import com.gong.modu.repository.ipo.CompanyFinancialHighlightRepository;
+import com.gong.modu.repository.ipo.IpoDisclosureReportRepository;
 import com.gong.modu.repository.ipo.IpoEventRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -26,6 +29,7 @@ public class IpoFinancialQueryService {
 
     private final IpoEventRepository ipoEventRepository;
     private final CompanyFinancialHighlightRepository financialRepository;
+    private final IpoDisclosureReportRepository disclosureReportRepository;
 
     @Transactional(readOnly = true)
     public List<IpoFinancialResponse> getFinancials(Long ipoEventId) {
@@ -63,5 +67,53 @@ public class IpoFinancialQueryService {
                         .totalEquity(h.getTotalEquity())
                         .build())
                 .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public IpoFinancialStatusResponse getFinancialStatus(Long ipoEventId) {
+        IpoEvent event = ipoEventRepository.findById(ipoEventId)
+                .orElseThrow(() -> new CustomException(ErrorCode.IPO_EVENT_NOT_FOUND));
+
+        List<IpoFinancialResponse> financials = getFinancials(ipoEventId);
+
+        if (!financials.isEmpty()) {
+            return IpoFinancialStatusResponse.builder()
+                    .financials(financials)
+                    .available(true)
+                    .message("재무 차트 데이터를 조회했습니다.")
+                    .build();
+        }
+
+        if (isSpacCompany(event)) {
+            return IpoFinancialStatusResponse.builder()
+                    .financials(financials)
+                    .available(false)
+                    .unavailableReason(FinancialDataUnavailableReason.SPAC)
+                    .message("스팩 특성상 영업 재무지표가 제한적입니다.")
+                    .build();
+        }
+
+        boolean hasParsedDisclosure = disclosureReportRepository
+                .existsByIpoEventIdAndOriginalTextIsNotNull(ipoEventId);
+
+        FinancialDataUnavailableReason reason = hasParsedDisclosure
+                ? FinancialDataUnavailableReason.FINANCIAL_TABLE_NOT_FOUND
+                : FinancialDataUnavailableReason.DISCLOSURE_NOT_PARSED;
+
+        String message = hasParsedDisclosure
+                ? "공시 원문에서 재무제표 표를 찾지 못했습니다."
+                : "공시 원문 파싱이 완료되면 재무제표를 표시할 수 있습니다.";
+
+        return IpoFinancialStatusResponse.builder()
+                .financials(financials)
+                .available(false)
+                .unavailableReason(reason)
+                .message(message)
+                .build();
+    }
+
+    private boolean isSpacCompany(IpoEvent event) {
+        String corpName = event.getCompany().getCorpName();
+        return corpName != null && (corpName.contains("기업인수목적") || corpName.contains("스팩"));
     }
 }

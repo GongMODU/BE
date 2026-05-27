@@ -46,9 +46,12 @@ public class DisclosureParsingExecutor {
                 .orElseThrow(() -> new CustomException(ErrorCode.IPO_EVENT_NOT_FOUND));
 
         byte[] zipBytes = dartApiClient.downloadDisclosureDocumentZip(rceptNo);
+        log.info("[DART Disclosure Parsing] ZIP 다운로드 완료: rceptNo={}, zipSize={} bytes", rceptNo, zipBytes == null ? 0 : zipBytes.length);
+
         String originalText = disclosureTextExtractor.extractTextFromZip(zipBytes);
 
         if (originalText == null || originalText.isBlank()) {
+            log.warn("[DART Disclosure Parsing] 추출 텍스트 비어있음: rceptNo={}, zipSize={}", rceptNo, zipBytes == null ? 0 : zipBytes.length);
             throw new CustomException(ErrorCode.DISCLOSURE_PARSING_FAILED);
         }
 
@@ -70,7 +73,11 @@ public class DisclosureParsingExecutor {
 
         AiDisclosureParsingResult aiResult = null;
         if (aiContext != null && !aiContext.isBlank()) {
-            aiResult = aiDisclosureParsingService.parseWithAi(aiContext);
+            try {
+                aiResult = aiDisclosureParsingService.parseWithAi(aiContext);
+            } catch (Exception e) {
+                log.warn("[DART Disclosure Parsing] AI 파싱 실패, originalText는 보존: rceptNo={}, error={}", rceptNo, e.getMessage());
+            }
         }
 
         IpoDisclosureParsingResult parsingResult =

@@ -81,6 +81,28 @@ public interface IpoEventRepository extends JpaRepository<IpoEvent, Long> {
             "   OR e.listingDate IS NULL")
     List<Object[]> findIdAndCompanyNameForActiveIpos(@Param("listedStatus") IpoEventStatus listedStatus);
 
+    // 재무 하이라이트 동기화 대상 IPO 기업 조회
+    // 조건: 아직 상장 완료가 아니거나, 상장일이 추정값/NULL 인 활성 IPO
+    @Query("SELECT DISTINCT e.company.id FROM IpoEvent e " +
+            "WHERE e.status != :listedStatus " +
+            "   OR e.listingDateEstimated = true " +
+            "   OR e.listingDate IS NULL")
+    List<Long> findDistinctCompanyIdsForActiveIpos(@Param("listedStatus") IpoEventStatus listedStatus);
+
+    // 홈/상세 화면 노출 범위에 들어오는 IPO 기업 조회
+    // 기능명세서 3.1.1 기준: 최근 3개월 ~ 향후 4주 사이의 주요 일정이 있는 공모주
+    @Query("SELECT DISTINCT e.company.id FROM IpoEvent e " +
+            "WHERE e.demandForecastStart BETWEEN :from AND :to " +
+            "   OR e.subscriptionStartDate BETWEEN :from AND :to " +
+            "   OR e.lockupExpiryDate BETWEEN :from AND :to " +
+            "   OR e.refundDate BETWEEN :from AND :to " +
+            "   OR e.listingDate BETWEEN :from AND :to " +
+            "   OR e.allocationDate BETWEEN :from AND :to")
+    List<Long> findDistinctCompanyIdsForHomeExposure(
+            @Param("from") LocalDate from,
+            @Param("to") LocalDate to
+    );
+
     // 모든 IpoEvent의 status를 새로 계산하기 위한 일정 정보만 추출
     // (id, subscriptionStartDate, subscriptionEndDate, listingDate, 현재 status)
     @Query("SELECT e.id, e.subscriptionStartDate, e.subscriptionEndDate, e.listingDate, e.status FROM IpoEvent e")

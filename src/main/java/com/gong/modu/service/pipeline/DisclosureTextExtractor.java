@@ -2,6 +2,7 @@ package com.gong.modu.service.pipeline;
 
 import com.gong.modu.exception.CustomException;
 import com.gong.modu.exception.ErrorCode;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayInputStream;
@@ -9,11 +10,14 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 // DART 공시 원문 ZIP 파일에서 텍스트를 추출하는 클래스
+@Slf4j
 @Component
 public class DisclosureTextExtractor {
 
@@ -28,10 +32,15 @@ public class DisclosureTextExtractor {
     // ZIP 파일 byte[]를 받아 내부 파일들의 텍스트를 하나로 합치는 메서드
     public String extractTextFromZip(byte[] zipBytes) {
         if (zipBytes == null || zipBytes.length == 0) {
+            log.warn("[DisclosureTextExtractor] ZIP byte[] 비어있음 (length={})", zipBytes == null ? "null" : 0);
             return "";
         }
 
+        log.info("[DisclosureTextExtractor] ZIP 추출 시작: zipSize={} bytes", zipBytes.length);
+
         StringBuilder result = new StringBuilder(); // 여러 파일에서 추출한 텍스트를 누적하기 위한 StringBuilder
+        List<String> entryNames = new ArrayList<>();
+        int textFileCount = 0;
 
         try (ZipInputStream zipInputStream = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
             ZipEntry entry;
@@ -42,11 +51,14 @@ public class DisclosureTextExtractor {
                 }
 
                 String fileName = entry.getName(); // ZIP 내부 파일명을 가져옴
+                entryNames.add(fileName);
 
                 // 텍스트 추출 대상 파일만 처리
                 if (!isTextFile(fileName)) {
                     continue;
                 }
+
+                textFileCount++;
 
                 // 현재 ZIP entry의 바이트 내용을 읽음
                 byte[] fileBytes = readCurrentEntry(zipInputStream);
@@ -65,11 +77,21 @@ public class DisclosureTextExtractor {
                         .append(plainText);
             }
         } catch (IOException e) { // ZIP 처리 중 IOException이 발생하면 공시 파싱 단계의 실패로 판단
+            log.warn("[DisclosureTextExtractor] ZIP IOException: zipSize={}, error={}", zipBytes.length, e.getMessage());
             throw new CustomException(ErrorCode.DISCLOSURE_PARSING_FAILED);
         }
 
+        String extracted = result.toString().trim();
+        log.info(
+                "[DisclosureTextExtractor] ZIP 추출 완료: entries={}, textFiles={}, extractedLength={}, sampleEntries={}",
+                entryNames.size(),
+                textFileCount,
+                extracted.length(),
+                entryNames.size() > 5 ? entryNames.subList(0, 5) : entryNames
+        );
+
         // 누적된 텍스트 반환
-        return result.toString().trim();
+        return extracted;
     }
 
     // 파일명이 텍스트 추출 대상 확장자인지 확인하는 메서드
