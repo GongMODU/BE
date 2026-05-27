@@ -104,17 +104,21 @@ public class IpoAdminController {
         return Map.of("message", "일괄 요약 완료 (성공: " + success + "건, 실패: " + fail + "건)");
     }
 
+    // 스케줄러 ExternalDataScheduler.IPO_SYNC_LOOKBACK_DAYS 와 동일한 기본 조회 범위.
+    // 정정 공시만 잡히고 원본 증권신고서를 놓치지 않도록 6개월 범위로 잡는다.
+    private static final int DEFAULT_SYNC_LOOKBACK_DAYS = 180;
+
     @Operation(
             summary = "최근 IPO 공시 발견·기업·IPO 데이터 동기화",
             description = """
                     DART 시장 전체 공시에서 공모주 관련 기업을 찾아 기업 정보 + IPO 메타 데이터를 DB에 동기화한다.
                     스케줄러 syncIpoData()(매일 새벽 1시) 와 동일 작업의 수동 트리거 버전.
-                    beginDate/endDate 미지정 시 최근 35일, limit 지정 시 동기화 기업 수 제한.
+                    beginDate/endDate 미지정 시 최근 180일, limit 지정 시 동기화 기업 수 제한.
                     """
     )
     @PostMapping("/api/admin/ipo/sync-recent-ipos")
     public ResponseEntity<Map<String, Object>> syncRecentIpos(
-            @Parameter(description = "조회 시작일 (yyyyMMdd, 미지정 시 35일 전)")
+            @Parameter(description = "조회 시작일 (yyyyMMdd, 미지정 시 180일 전)")
             @RequestParam(required = false) String beginDate,
             @Parameter(description = "조회 종료일 (yyyyMMdd, 미지정 시 오늘)")
             @RequestParam(required = false) String endDate,
@@ -123,7 +127,7 @@ public class IpoAdminController {
     ) {
         LocalDate today = LocalDate.now();
         String end = endDate != null ? endDate : today.format(BASIC_DATE);
-        String begin = beginDate != null ? beginDate : today.minusDays(35).format(BASIC_DATE);
+        String begin = beginDate != null ? beginDate : today.minusDays(DEFAULT_SYNC_LOOKBACK_DAYS).format(BASIC_DATE);
 
         Set<String> corpCodes = dartIpoSyncService.findRecentIpoCorpCodes(begin, end);
 
@@ -176,8 +180,11 @@ public class IpoAdminController {
     @Operation(
             summary = "특정 기업 재무 하이라이트 수동 동기화",
             description = """
-                    특정 companyId 의 최근 N개년 사업보고서(ANNUAL) 재무 하이라이트를 DART 에서 가져와 저장/갱신한다.
-                    연결(CFS)과 개별(OFS)을 모두 시도하며, 조회 API 는 연결 우선/개별 폴백으로 사용한다.
+                    특정 companyId 의 최근 N개년 사업보고서(ANNUAL) 재무 하이라이트를 저장/갱신한다.
+                    1차로 DART 단일회사 전체 재무제표 API 를 시도(연결 CFS / 개별 OFS 둘 다)하고,
+                    DART 에 사업보고서 미등록 등으로 비어있으면 2차로 해당 기업의 공시 원문(증권신고서·투자설명서 등)에서
+                    DisclosureFinancialStatementParser 로 재무 표를 추출하는 fallback 을 수행한다.
+                    SPAC 회사는 동기화 대상에서 제외된다. 응답의 `fallbackSynced` 가 비어있지 않으면 공시 원문에서 보강된 케이스다.
                     """
     )
     @PostMapping("/api/admin/ipo/financial-highlights/sync-company/{companyId}")
@@ -195,7 +202,8 @@ public class IpoAdminController {
             summary = "홈 노출 IPO 기업 재무 하이라이트 일괄 수동 동기화",
             description = """
                     홈/상세 화면 노출 범위(최근 3개월 ~ 향후 4주 주요 일정)에 들어오는 IPO 기업들의 최근 N개년 사업보고서 재무 하이라이트를 저장/갱신한다.
-                    스케줄러 syncActiveIpoFinancialHighlights()(매일 새벽 4시) 와 동일 작업.
+                    스케줄러 syncActiveIpoFinancialHighlights()(매일 새벽 4시) 와 동일 작업의 수동 트리거 버전.
+                    DART 재무제표 API 우선 시도 후, 미등록 회사는 공시 원문에서 fallback 파싱 (sync-company 와 동일 로직).
                     """
     )
     @PostMapping("/api/admin/ipo/financial-highlights/sync-active")
@@ -259,9 +267,10 @@ public class IpoAdminController {
     @Operation(
             summary = "공시 파싱 실패 캐시 초기화",
             description = """
-                    DART 연결 버그 수정 후 6시간 TTL 만료 전에 즉시 재시도하고 싶을 때 사용.
-                    rceptNos 파라미터가 없으면 전체 실패 캐시를 삭제.
-                    rceptNos 지정 시 해당 공시만 초기화.
+                    Redis 에 쌓인 `failed:disclosure-parse:*` 키를 즉시 삭제한다.
+                    공시 파싱 파이프라인은 실패한 rceptNo 를 일시적 6시간 / 영구성(DART status 014) 7일 TTL 로
+                    마킹해 반복 호출을 차단하는데, DART 연결 버그 수정 직후 등 TTL 만료 전에 강제로 재시도하고 싶을 때 사용.
+                    rceptNos 미지정 시 전체 초기화, 지정 시 해당 접수번호만 초기화.
                     """
     )
     @PostMapping("/api/admin/ipo/clear-parse-failure-cache")
