@@ -81,6 +81,9 @@ services:
       DART_API_KEY: ${DART_API_KEY}
       KIS_APP_KEY: ${KIS_APP_KEY}
       KIS_APP_SECRET: ${KIS_APP_SECRET}
+      # JVM heap 상한 + DART API (opendart.fss.or.kr) 가 TLSv1.3 ClientHello 를 거부해
+      # SSLHandshakeException(handshake_failure) 가 발생하는 문제 회피용으로 TLSv1.2 강제
+      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx512m -Djdk.tls.client.protocols=TLSv1.2"
 
     ports:
       - "8080:8080"
