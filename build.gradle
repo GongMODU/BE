@@ -60,6 +60,12 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-webflux'
 	//runtimeOnly 'io.netty:netty-resolver-dns-native-macos:4.1.115.Final:osx-aarch64'
 
+	// Netty 가 JDK SSL stack 대신 BoringSSL(OpenSSL 계열) 사용하도록 native lib 제공
+	// DART(opendart.fss.or.kr) 같은 한국 정부 API 가 Java 17 기본 cipher/namedGroups 를
+	// 거부해서 SSLHandshakeException(handshake_failure) 가 발생하는 문제 해결.
+	// Netty 가 classpath 에서 자동 감지해 SSL provider 로 BoringSSL 우선 사용.
+	runtimeOnly 'io.netty:netty-tcnative-boringssl-static:2.0.66.Final'
+
 	// Email
 	implementation 'org.springframework.boot:spring-boot-starter-mail'
 
