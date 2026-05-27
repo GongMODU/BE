@@ -81,12 +81,15 @@ services:
       DART_API_KEY: ${DART_API_KEY}
       KIS_APP_KEY: ${KIS_APP_KEY}
       KIS_APP_SECRET: ${KIS_APP_SECRET}
-      # JVM heap 상한 + DART API (opendart.fss.or.kr) SSL handshake_failure 회피
-      # - TLSv1.2 강제 (DART 가 TLSv1.3 ClientHello 거부)
+      # JVM heap + DART API 호출 행 걸림 회피용 JVM 옵션
+      # - TLSv1.2 강제 (DART 가 TLSv1.3 거부)
       # - namedGroups 제한 (Java 17 신규 EC curves 제외)
-      # - disabledAlgorithms 변경은 JAVA_TOOL_OPTIONS 로 전달 불가(값에 공백 포함됨)
-      #   → ModuApplication.main() 에서 Security.setProperty() 로 직접 설정
-      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx512m -Djdk.tls.client.protocols=TLSv1.2 -Djdk.tls.namedGroups=secp256r1,secp384r1,secp521r1"
+      # - preferIPv4Stack: Java 의 IPv6 우선 동작이 docker bridge 에서 행 거는 케이스 회피
+      # - reactor.netty.native=false: native epoll 대신 NIO 사용. 일부 EC2/커널 조합에서
+      #   epoll selector 가 SSL handshake 시작 단계에서 멈추는 알려진 이슈 회피
+      # - disabledAlgorithms 변경은 공백 포함 → ModuApplication.main() 의
+      #   Security.setProperty() 에서 설정
+      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx512m -Djdk.tls.client.protocols=TLSv1.2 -Djdk.tls.namedGroups=secp256r1,secp384r1,secp521r1 -Djava.net.preferIPv4Stack=true -Dreactor.netty.native=false"
 
     ports:
       - "8080:8080"
