@@ -31,6 +31,11 @@ public class SecurityConfig {
     }
 
     @Bean
+    public IpoAdminApiKeyFilter ipoAdminApiKeyFilter() {
+        return new IpoAdminApiKeyFilter();
+    }
+
+    @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
@@ -55,9 +60,11 @@ public class SecurityConfig {
                                 "/api/youtube/random-transcript",
                                 // 유튜브 자막 추출 & 요약용 관리자 API
                                 "/api/youtube/admin/**",
-                                // 공시 원문 파서 테스트용 API
+                                // 공시 원문 파서 테스트용 API (local·local-test 프로파일 한정)
                                 "/api/test/**",
-                                "/api/ipo/**"
+                                "/api/ipo/**",
+                                // IPO 운영 관리자 API (IpoAdminApiKeyFilter 가 X-IPO-ADMIN-KEY 검증)
+                                "/api/admin/ipo/**"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
@@ -82,6 +89,10 @@ public class SecurityConfig {
                 )
                 .addFilterBefore(
                         adminApiKeyFilter(),
+                        UsernamePasswordAuthenticationFilter.class
+                )
+                .addFilterBefore(
+                        ipoAdminApiKeyFilter(),
                         UsernamePasswordAuthenticationFilter.class
                 )
                 .addFilterBefore(
