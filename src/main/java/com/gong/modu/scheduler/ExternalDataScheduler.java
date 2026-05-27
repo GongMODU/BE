@@ -4,6 +4,7 @@ import com.gong.modu.domain.entity.ipo.Company;
 import com.gong.modu.repository.ipo.CompanyRepository;
 import com.gong.modu.service.pipeline.DartCompanySyncService;
 import com.gong.modu.service.pipeline.DartDisclosureParsingService;
+import com.gong.modu.service.ipo.IpoDisclosureReportSummarizeService;
 import com.gong.modu.service.pipeline.DartFinancialSyncService;
 import com.gong.modu.service.pipeline.DartIpoSyncService;
 import com.gong.modu.service.pipeline.KisStockPriceSyncService;
@@ -37,6 +38,7 @@ public class ExternalDataScheduler {
     private final DartIpoSyncService dartIpoSyncService; // DART 공시/주요정보를 IPO 데이터로 동기화하는 서비스
     private final DartDisclosureParsingService dartDisclosureParsingService; // DART 공시 원문 다운/파싱 로직을 실행하는 서비스
     private final DartFinancialSyncService dartFinancialSyncService; // DART 재무제표 기반 재무 하이라이트 동기화 서비스
+    private final IpoDisclosureReportSummarizeService summarizeService; // 공시 AI 요약 생성 서비스
 
     // 시장 전체에서 최근 공모주 관련 공시를 찾아 기업·IPO 데이터를 동기화하는 스케줄러 메서드
     // 공시 원문 파싱 스케줄러(새벽 2시)보다 먼저 실행되도록 새벽 1시로 설정
@@ -137,6 +139,19 @@ public class ExternalDataScheduler {
         log.info("[Scheduler] 활성 IPO 재무 하이라이트 동기화 종료");
     }
 
+
+    // 재무 하이라이트 동기화(새벽 4시) 완료 후 아직 요약되지 않은 활성 IPO 공시를 자동 요약
+    // 신규 공모주가 파싱·재무 적재까지 완료되면 다음 날 5시에 자동으로 AI 요약이 생성됨
+    @Scheduled(cron = "0 0 5 * * *")
+    public void summarizeUnsummarizedDisclosures() {
+        log.info("[Scheduler] 미요약 공시 AI 자동 요약 시작");
+        try {
+            summarizeService.summarizeUnsummarized();
+        } catch (Exception e) {
+            log.error("[Scheduler] 미요약 공시 AI 자동 요약 실패", e);
+        }
+        log.info("[Scheduler] 미요약 공시 AI 자동 요약 종료");
+    }
 
     // 상장 기업들의 KIS 주가 데이터를 동기화하는 스케줄러 메서드
     // 주식 장 마감 후 데이터를 가져오기 위해 오후 6시로 설정

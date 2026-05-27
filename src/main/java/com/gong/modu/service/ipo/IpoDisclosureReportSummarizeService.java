@@ -6,6 +6,7 @@ import com.gong.modu.constant.SummaryPrompts;
 import com.gong.modu.domain.dto.anthropic.AnthropicMessageDto;
 import com.gong.modu.domain.dto.ipo.IpoSummaryResult;
 import com.gong.modu.domain.entity.ipo.*;
+import com.gong.modu.domain.enums.ipo.IpoEventStatus;
 import com.gong.modu.exception.CustomException;
 import com.gong.modu.exception.ErrorCode;
 import com.gong.modu.repository.ipo.CompanyFinancialHighlightRepository;
@@ -32,6 +33,27 @@ public class IpoDisclosureReportSummarizeService {
     private final ObjectMapper objectMapper;
 
     private static final int MAX_TOKENS = 2000;
+
+    // 아직 요약되지 않은 활성 IPO 공시를 자동으로 요약하는 메서드 (스케줄러용)
+    public void summarizeUnsummarized() {
+        List<Long> reportIds = reportRepository.findUnsummarizedReportIdsForActiveIpos(IpoEventStatus.LISTED);
+        log.info("[IpoSummarize] 미요약 공시 자동 요약 시작: {}건", reportIds.size());
+
+        int success = 0;
+        int fail = 0;
+
+        for (Long reportId : reportIds) {
+            try {
+                summarize(reportId);
+                success++;
+            } catch (Exception e) {
+                log.warn("[IpoSummarize] 자동 요약 실패 reportId={}: {}", reportId, e.getMessage());
+                fail++;
+            }
+        }
+
+        log.info("[IpoSummarize] 미요약 공시 자동 요약 완료: 성공 {}건, 실패 {}건", success, fail);
+    }
 
     @Transactional
     public void summarize(Long reportId) {
