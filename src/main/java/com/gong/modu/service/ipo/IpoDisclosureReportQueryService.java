@@ -1,7 +1,6 @@
 package com.gong.modu.service.ipo;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gong.modu.domain.dto.ipo.IpoDisclosureReportResponse;
 import com.gong.modu.domain.entity.ipo.IpoDisclosureReport;
@@ -42,19 +41,19 @@ public class IpoDisclosureReportQueryService {
         return IpoDisclosureReportResponse.builder()
                 .companySummary(report.getCompanySummary())
                 .financialSummary(report.getFinancialSummary())
-                .investorProtectionSummary(deserializeNode(report.getInvestorProtectionSummary()))
-                .investmentPointSummary(deserializeNode(report.getInvestmentPointSummary()))
+                .investorProtectionSummary(deserializeSummarySection(report.getInvestorProtectionSummary()))
+                .investmentPointSummary(deserializeSummarySection(report.getInvestmentPointSummary()))
                 .riskSummary(deserializeRiskItems(report.getRiskSummary()))
                 .summaryVersion(report.getSummaryVersion())
                 .build();
     }
 
-    private JsonNode deserializeNode(String json) {
+    private IpoDisclosureReportResponse.SummarySection deserializeSummarySection(String json) {
         if (json == null) return null;
         try {
-            return objectMapper.readTree(json);
+            return objectMapper.readValue(json, IpoDisclosureReportResponse.SummarySection.class);
         } catch (Exception e) {
-            log.warn("JsonNode 역직렬화 실패: {}", e.getMessage());
+            log.warn("SummarySection 역직렬화 실패: {}", e.getMessage());
             return null;
         }
     }

@@ -58,9 +58,9 @@ public final class SummaryPrompts {
             "- 형식: JSON 객체\n" +
             "  {\n" +
             "    \"highlight\": \"50자 이내 핵심 1문장\",\n" +
-            "    \"items\": {\n" +
-            "      \"항목명\": \"2~3문장, 80자 이내\"\n" +
-            "    }\n" +
+            "    \"items\": [\n" +
+            "      { \"title\": \"항목명\", \"content\": \"2~3문장, 80자 이내\" }\n" +
+            "    ]\n" +
             "  }\n" +
             "- SPAC인 경우 항목: 공모 예치금 / 예치 목적 / 운용 자금\n" +
             "- 일반 공모주인 경우 항목: 보호예수 / 환매청구권 / 의무보유확약 / 청약증거금 환불\n" +
@@ -71,11 +71,11 @@ public final class SummaryPrompts {
             "- SPAC인 경우:\n" +
             "  {\n" +
             "    \"highlight\": \"50자 이내 핵심 1문장\",\n" +
-            "    \"items\": {\n" +
-            "      \"합병 대상 산업\": \"string\",\n" +
-            "      \"합병 기한\": \"string\",\n" +
-            "      \"기한 초과 시\": \"string\"\n" +
-            "    }\n" +
+            "    \"items\": [\n" +
+            "      { \"title\": \"합병 대상 산업\", \"content\": \"string\" },\n" +
+            "      { \"title\": \"합병 기한\", \"content\": \"string\" },\n" +
+            "      { \"title\": \"기한 초과 시\", \"content\": \"string\" }\n" +
+            "    ]\n" +
             "  }\n" +
             "- 입력 데이터에 존재하는 항목만 포함할 것\n" +
             "- 톤: 중립적\n\n" +
@@ -91,11 +91,15 @@ public final class SummaryPrompts {
             "  \"financialSummary\": \"string\",\n" +
             "  \"investorProtectionSummary\": {\n" +
             "    \"highlight\": \"string\",\n" +
-            "    \"items\": { \"항목명\": \"string\" }\n" +
+            "    \"items\": [\n" +
+            "      { \"title\": \"string\", \"content\": \"string\" }\n" +
+            "    ]\n" +
             "  },\n" +
             "  \"investmentPointSummary\": {\n" +
             "    \"highlight\": \"string\",\n" +
-            "    \"items\": { \"항목명\": \"string\" }\n" +
+            "    \"items\": [\n" +
+            "      { \"title\": \"string\", \"content\": \"string\" }\n" +
+            "    ]\n" +
             "  } | null,\n" +
             "  \"riskSummary\": [\n" +
             "    { \"title\": \"string\", \"content\": \"string\" }\n" +
