@@ -52,32 +52,26 @@ public class IpoDisclosureReport extends BaseTimeEntity {
     private DisclosureDocumentType documentType = DisclosureDocumentType.UNKNOWN;
 
     // 공시 원문 ZIP에서 추출한 텍스트
-    @Lob
     @Column(name = "original_text", columnDefinition = "TEXT")
     private String originalText;
 
     // 기업 요약 (기업 유형, 설립일, 상장일, 주요 목적 등)
-    @Lob
     @Column(name = "company_summary", columnDefinition = "TEXT")
     private String companySummary;
 
     // 재무제표 요약
-    @Lob
     @Column(name = "financial_summary", columnDefinition = "TEXT")
     private String financialSummary;
 
     // 투자자 보호 장치 요약
-    @Lob
     @Column(name = "investor_protection_summary", columnDefinition = "TEXT")
     private String investorProtectionSummary;
 
     // 투자 포인트 요약 (SPAC: 합병 목표 산업, 합병 기한 등의 정보 담기 가능)
-    @Lob
     @Column(name = "investment_point_summary", columnDefinition = "TEXT")
     private String investmentPointSummary;
 
     // 리스크 요약
-    @Lob
     @Column(name = "risk_summary", columnDefinition = "TEXT")
     private String riskSummary;
 
