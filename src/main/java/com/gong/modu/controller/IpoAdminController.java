@@ -5,7 +5,9 @@ import com.gong.modu.repository.ipo.IpoDisclosureReportRepository;
 import com.gong.modu.service.ipo.IpoDisclosureReportSummarizeService;
 import com.gong.modu.service.pipeline.DartCompanySyncService;
 import com.gong.modu.service.pipeline.DartDisclosureParsingService;
+import com.gong.modu.service.pipeline.DartFinancialSyncService;
 import com.gong.modu.service.pipeline.DartIpoSyncService;
+import com.gong.modu.util.RedisUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -42,6 +44,8 @@ public class IpoAdminController {
     private final DartIpoSyncService dartIpoSyncService;
     private final DartCompanySyncService dartCompanySyncService;
     private final DartDisclosureParsingService dartDisclosureParsingService;
+    private final DartFinancialSyncService dartFinancialSyncService;
+    private final RedisUtil redisUtil;
 
     @Operation(
             summary = "특정 IPO의 공시 요약 강제 재생성",
@@ -141,6 +145,43 @@ public class IpoAdminController {
     }
 
     @Operation(
+            summary = "특정 기업 재무 하이라이트 수동 동기화",
+            description = """
+                    특정 companyId 의 최근 N개년 사업보고서(ANNUAL) 재무 하이라이트를 DART 에서 가져와 저장/갱신한다.
+                    연결(CFS)과 개별(OFS)을 모두 시도하며, 조회 API 는 연결 우선/개별 폴백으로 사용한다.
+                    """
+    )
+    @PostMapping("/api/admin/ipo/financial-highlights/sync-company/{companyId}")
+    public ResponseEntity<DartFinancialSyncService.FinancialHighlightSyncResult> syncCompanyFinancialHighlights(
+            @PathVariable Long companyId,
+            @Parameter(description = "최근 몇 개 사업연도를 동기화할지 (기본 3)")
+            @RequestParam(defaultValue = "3") int recentYears
+    ) {
+        return ResponseEntity.ok(
+                dartFinancialSyncService.syncCompanyAnnualFinancialHighlights(companyId, recentYears)
+        );
+    }
+
+    @Operation(
+            summary = "홈 노출 IPO 기업 재무 하이라이트 일괄 수동 동기화",
+            description = """
+                    홈/상세 화면 노출 범위(최근 3개월 ~ 향후 4주 주요 일정)에 들어오는 IPO 기업들의 최근 N개년 사업보고서 재무 하이라이트를 저장/갱신한다.
+                    스케줄러 syncActiveIpoFinancialHighlights()(매일 새벽 4시) 와 동일 작업.
+                    """
+    )
+    @PostMapping("/api/admin/ipo/financial-highlights/sync-active")
+    public ResponseEntity<DartFinancialSyncService.FinancialHighlightSyncResult> syncActiveIpoFinancialHighlights(
+            @Parameter(description = "최근 몇 개 사업연도를 동기화할지 (기본 3)")
+            @RequestParam(defaultValue = "3") int recentYears,
+            @Parameter(description = "동기화할 최대 기업 수 (미지정 시 대상 전체)")
+            @RequestParam(required = false) Integer limit
+    ) {
+        return ResponseEntity.ok(
+                dartFinancialSyncService.syncActiveIpoAnnualFinancialHighlights(recentYears, limit)
+        );
+    }
+
+    @Operation(
             summary = "활성 IPO 일괄 재파싱",
             description = """
                     status != LISTED 이거나 listingDate 가 추정값/NULL 인 모든 IPO 공시를 일괄 재파싱.
@@ -184,6 +225,29 @@ public class IpoAdminController {
         if (!failed.isEmpty()) result.put("failed", failed);
 
         return ResponseEntity.ok(result);
+    }
+
+    @Operation(
+            summary = "공시 파싱 실패 캐시 초기화",
+            description = """
+                    DART 연결 버그 수정 후 6시간 TTL 만료 전에 즉시 재시도하고 싶을 때 사용.
+                    rceptNos 파라미터가 없으면 전체 실패 캐시를 삭제.
+                    rceptNos 지정 시 해당 공시만 초기화.
+                    """
+    )
+    @PostMapping("/api/admin/ipo/clear-parse-failure-cache")
+    public ResponseEntity<Map<String, Object>> clearParseFailureCache(
+            @Parameter(description = "초기화할 접수번호 목록 (미지정 시 전체 초기화)")
+            @RequestParam(required = false) List<String> rceptNos
+    ) {
+        int cleared = (rceptNos == null || rceptNos.isEmpty())
+                ? redisUtil.clearAllDisclosureParsingFailedKeys()
+                : redisUtil.clearDisclosureParsingFailedKeys(rceptNos);
+
+        return ResponseEntity.ok(Map.of(
+                "clearedCount", cleared,
+                "message", "공시 파싱 실패 캐시 " + cleared + "건 초기화 완료"
+        ));
     }
 
     @Operation(

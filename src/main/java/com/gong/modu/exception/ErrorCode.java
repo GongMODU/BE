@@ -64,6 +64,9 @@ public enum ErrorCode {
     // DART 원문 공시 ZIP을 받았지만 텍스트 추출 또는 파싱에 실패한 경우
     DISCLOSURE_PARSING_FAILED(HttpStatus.BAD_GATEWAY, "공시 원문 파싱 중 오류가 발생했습니다."),
 
+    // DART에 공시 메타정보는 있으나 원문 ZIP 파일이 등록되지 않은 경우 (DART status 014)
+    DART_DOCUMENT_NOT_AVAILABLE(HttpStatus.NOT_FOUND, "DART에 공시 원문이 등록되지 않았습니다."),
+
     // AI를 이용한 공시 원문 보완 파싱이 실패한 경우 (Claude 응답은 왔지만 JSON 파싱 실패, 필드 변환 실패 등이 발생한 경우)
     AI_DISCLOSURE_PARSING_FAILED(HttpStatus.BAD_GATEWAY, "AI 공시 보완 파싱 중 오류가 발생했습니다."),
 

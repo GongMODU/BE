@@ -1,6 +1,7 @@
 package com.gong.modu.repository.ipo;
 
 import com.gong.modu.domain.entity.ipo.IpoDisclosureReport;
+import com.gong.modu.domain.enums.ipo.DisclosureDocumentType;
 import com.gong.modu.domain.enums.ipo.IpoEventStatus;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -9,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Collection;
 
 // 공시 원문 요약 조회 Repository
 public interface IpoDisclosureReportRepository extends JpaRepository<IpoDisclosureReport, Long> {
@@ -27,6 +29,18 @@ public interface IpoDisclosureReportRepository extends JpaRepository<IpoDisclosu
 
     // original_text가 아직 없는 공시를 일부만 조회
     List<IpoDisclosureReport> findByOriginalTextIsNull(Pageable pageable);
+
+    boolean existsByIpoEventIdAndOriginalTextIsNotNull(Long ipoEventId);
+
+    // 특정 기업의 원문 파싱 완료된 IPO 공시 조회
+    @Query("SELECT r FROM IpoDisclosureReport r " +
+            "WHERE r.ipoEvent.company.id = :companyId " +
+            "  AND r.originalText IS NOT NULL " +
+            "  AND r.documentType IN :documentTypes")
+    List<IpoDisclosureReport> findParsedIpoReportsByCompanyId(
+            @Param("companyId") Long companyId,
+            @Param("documentTypes") Collection<DisclosureDocumentType> documentTypes
+    );
 
     // 특정 공모 이벤트의 공시 접수번호만 조회 (LOB 칼럼 미적재)
     // PostgreSQL OID 기반 @Lob 칼럼은 트랜잭션 없이 읽으면 예외가 발생하므로,

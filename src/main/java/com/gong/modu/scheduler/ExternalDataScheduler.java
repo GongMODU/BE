@@ -4,6 +4,7 @@ import com.gong.modu.domain.entity.ipo.Company;
 import com.gong.modu.repository.ipo.CompanyRepository;
 import com.gong.modu.service.pipeline.DartCompanySyncService;
 import com.gong.modu.service.pipeline.DartDisclosureParsingService;
+import com.gong.modu.service.pipeline.DartFinancialSyncService;
 import com.gong.modu.service.pipeline.DartIpoSyncService;
 import com.gong.modu.service.pipeline.KisStockPriceSyncService;
 import lombok.RequiredArgsConstructor;
@@ -24,8 +25,10 @@ public class ExternalDataScheduler {
     private static final DateTimeFormatter BASIC_DATE = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     // IPO 동기화 시 공시를 검색할 과거 조회 범위 (일 단위)
-    // 매일 실행되므로 누락 방지를 위한 버퍼를 포함해 넉넉히 설정
-    private static final int IPO_SYNC_LOOKBACK_DAYS = 35;
+    // 한국 IPO는 원본 증권신고서 제출 → 1~2개월 후 정정/효력발생/상장으로 진행되므로
+    // 정정 공시만 잡고 원본 신고서를 놓치면 ZIP 원문이 없는 정정 공시만 DB에 남게 됨.
+    // 6개월 범위로 잡아 원본 신고서까지 함께 수집해야 공시 원문 + 재무제표 fallback이 동작함.
+    private static final int IPO_SYNC_LOOKBACK_DAYS = 180;
 
     private final CompanyRepository companyRepository;
     private final KisStockPriceSyncService kisStockPriceSyncService; // 실제 KIS 주가 동기화 로직을 실행할 서비스
@@ -33,6 +36,7 @@ public class ExternalDataScheduler {
     private final DartCompanySyncService dartCompanySyncService; // DART 기업개황을 companies 테이블에 동기화하는 서비스
     private final DartIpoSyncService dartIpoSyncService; // DART 공시/주요정보를 IPO 데이터로 동기화하는 서비스
     private final DartDisclosureParsingService dartDisclosureParsingService; // DART 공시 원문 다운/파싱 로직을 실행하는 서비스
+    private final DartFinancialSyncService dartFinancialSyncService; // DART 재무제표 기반 재무 하이라이트 동기화 서비스
 
     // 시장 전체에서 최근 공모주 관련 공시를 찾아 기업·IPO 데이터를 동기화하는 스케줄러 메서드
     // 공시 원문 파싱 스케줄러(새벽 2시)보다 먼저 실행되도록 새벽 1시로 설정
@@ -110,6 +114,27 @@ public class ExternalDataScheduler {
             log.error("[Scheduler] 활성 IPO 일괄 재파싱 실패", e);
         }
         log.info("[Scheduler] 활성 IPO 일괄 재파싱 종료");
+    }
+
+    // 홈/상세 화면 노출 범위의 IPO 기업들에 대해 최근 3개년 사업보고서 재무 하이라이트를 동기화
+    // IPO/공시 파싱 배치 이후 실행해 신규 발견 기업도 함께 보강
+    @Scheduled(cron = "0 0 4 * * *")
+    public void syncActiveIpoFinancialHighlights() {
+        log.info("[Scheduler] 활성 IPO 재무 하이라이트 동기화 시작");
+        try {
+            DartFinancialSyncService.FinancialHighlightSyncResult result =
+                    dartFinancialSyncService.syncActiveIpoAnnualFinancialHighlights(3, null);
+
+            log.info(
+                    "[Scheduler] 활성 IPO 재무 하이라이트 동기화 완료: 대상 기업 {}개, 성공 {}건, 실패 {}건",
+                    result.getTargetCompanyCount(),
+                    result.getSuccessCount(),
+                    result.getFailedCount()
+            );
+        } catch (Exception e) {
+            log.error("[Scheduler] 활성 IPO 재무 하이라이트 동기화 실패", e);
+        }
+        log.info("[Scheduler] 활성 IPO 재무 하이라이트 동기화 종료");
     }
 
 

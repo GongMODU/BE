@@ -31,7 +31,7 @@ public class CompanyFinancialHighlight extends BaseTimeEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // 재무 정보가 어느 기업의 것인지를 나타내는 왜래키
+    // 재무 정보가 어느 기업의 것인지를 나타내는 외래키
     // 한 기업은 여러 연도/분기의 재무 정보를 가질 수 있으므로 다대일 관계
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "company_id", nullable = false)

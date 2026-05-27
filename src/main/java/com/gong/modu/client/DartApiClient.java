@@ -14,6 +14,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
 // DART API 호출을 전담하는 Client 클래스
@@ -183,6 +184,8 @@ public class DartApiClient {
     }
 
     // DART 공시서류원본파일 API를 호출하여 공시 원문 ZIP 파일을 byte[]로 다운로드하는 메서드
+    // DART는 인증 실패/한도 초과/파일 없음 등의 오류를 200 OK + 작은 XML 본문으로 반환하므로
+    // 작은 응답은 ZIP이 아니라 에러 XML로 간주하고 status 코드를 파싱해 정확한 예외 메시지로 throw
     public byte[] downloadDisclosureDocumentZip(String rceptNo) {
         try {
             byte[] response = dartWebClient.get()
@@ -199,6 +202,20 @@ public class DartApiClient {
                 throw new CustomException(ErrorCode.EXTERNAL_API_EMPTY_RESPONSE);
             }
 
+            // ZIP 파일은 최소 수 KB 이상. 1KB 미만은 에러 XML 응답으로 판단
+            if (response.length < 1024 && isLikelyErrorXml(response)) {
+                String body = new String(response, StandardCharsets.UTF_8);
+                log.warn("[DART API] document.xml 비-ZIP 응답(에러 XML 추정): rceptNo={}, size={}, body={}",
+                        rceptNo, response.length, body);
+
+                // status 014 = "파일이 존재하지 않습니다" → 영구성 실패로 분리
+                if (body.contains("<status>014</status>")) {
+                    throw new CustomException(ErrorCode.DART_DOCUMENT_NOT_AVAILABLE);
+                }
+
+                throw new CustomException(ErrorCode.DISCLOSURE_PARSING_FAILED);
+            }
+
             return response; // zip 바이너리 반환
         } catch (WebClientResponseException e) {
             log.warn("[DART API] HTTP 응답 오류 status={}", e.getStatusCode(), e);
@@ -207,5 +224,14 @@ public class DartApiClient {
             log.warn("[DART API] 요청 실패", e);
             throw new CustomException(ErrorCode.DART_API_ERROR);
         }
+    }
+
+    // 응답 byte[] 앞부분이 ZIP magic number(PK\x03\x04)가 아니고 XML 헤더로 시작하면 에러 응답으로 판단
+    private boolean isLikelyErrorXml(byte[] response) {
+        if (response == null || response.length < 4) {
+            return true;
+        }
+        boolean isZip = response[0] == 0x50 && response[1] == 0x4B && response[2] == 0x03 && response[3] == 0x04;
+        return !isZip;
     }
 }

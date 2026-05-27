@@ -3,6 +3,7 @@ package com.gong.modu.controller;
 import com.gong.modu.domain.dto.ipo.IpoDisclosureReportResponse;
 import com.gong.modu.domain.dto.ipo.IpoEventSearchItemResponse;
 import com.gong.modu.domain.dto.ipo.IpoFinancialResponse;
+import com.gong.modu.domain.dto.ipo.IpoFinancialStatusResponse;
 import com.gong.modu.domain.dto.ipo.IpoHomeItemResponse;
 import com.gong.modu.domain.enums.ipo.IpoScheduleFilter;
 import com.gong.modu.service.ipo.IpoDisclosureReportQueryService;
@@ -89,5 +90,10 @@ public class IpoController {
     @GetMapping("/{ipoEventId}/financials")
     public ResponseEntity<List<IpoFinancialResponse>> getFinancials(@PathVariable Long ipoEventId) {
         return ResponseEntity.ok(financialQueryService.getFinancials(ipoEventId));
+    }
+
+    @GetMapping("/{ipoEventId}/financials/status")
+    public ResponseEntity<IpoFinancialStatusResponse> getFinancialStatus(@PathVariable Long ipoEventId) {
+        return ResponseEntity.ok(financialQueryService.getFinancialStatus(ipoEventId));
     }
 }
