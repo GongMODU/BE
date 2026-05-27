@@ -63,7 +63,6 @@ public class IpoDisclosureReportSummarizeService {
         String responseJson = anthropicService.call(messages, MAX_TOKENS);
 
         IpoSummaryResult result = parseResponse(responseJson, reportId);
-        if (result == null) return;
 
         report.updateSummary(
                 result.getCompanySummary(),
@@ -231,10 +230,14 @@ public class IpoDisclosureReportSummarizeService {
 
     private IpoSummaryResult parseResponse(String json, Long reportId) {
         try {
-            return objectMapper.readValue(json, IpoSummaryResult.class);
+            String cleaned = json.trim();
+            if (cleaned.startsWith("```")) {
+                cleaned = cleaned.replaceAll("(?s)^```[a-zA-Z]*\\r?\\n?", "").replaceAll("(?s)\\n?```$", "").trim();
+            }
+            return objectMapper.readValue(cleaned, IpoSummaryResult.class);
         } catch (JsonProcessingException e) {
             log.warn("[IpoSummarize] 응답 파싱 실패 reportId={}: {}", reportId, e.getMessage());
-            return null;
+            throw new RuntimeException("응답 파싱 실패: " + e.getMessage(), e);
         }
     }
 
