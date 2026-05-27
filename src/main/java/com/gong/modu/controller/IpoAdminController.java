@@ -75,7 +75,6 @@ public class IpoAdminController {
         return Map.of("message", "요약 완료 (성공: " + success + "건, 실패: " + fail + "건)");
     }
 
-<<<<<<< HEAD
     @Operation(
             summary = "최근 IPO 공시 발견·기업·IPO 데이터 동기화",
             description = """
