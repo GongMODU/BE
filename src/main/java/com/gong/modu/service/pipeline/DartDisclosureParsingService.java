@@ -132,10 +132,19 @@ public class DartDisclosureParsingService {
                 .map(entry -> CompletableFuture.runAsync(() -> {
                     Long ipoEventId = entry.getKey();
                     for (String rceptNo : entry.getValue()) {
+                        // 영구성 실패(DART status 014 등)로 마킹된 rceptNo 는 TTL 만료까지 skip
+                        // parse-unparsed 와 동일한 정책으로 매일 같은 실패를 반복 호출하는 자원 낭비를 차단
+                        if (redisUtil.isDisclosureParsingRecentlyFailed(rceptNo)) {
+                            log.info("[DART Disclosure Parsing] 재파싱 skip (실패 캐시): rceptNo={}", rceptNo);
+                            continue;
+                        }
                         try {
                             disclosureParsingExecutor.parseDisclosureReport(ipoEventId, rceptNo);
                         } catch (Exception e) {
-                            log.warn("[DART Disclosure Parsing] 재파싱 실패: rceptNo={}", rceptNo, e);
+                            long failureTtlHours = isPermanentDartFailure(e) ? 24 * 7 : 6;
+                            redisUtil.markDisclosureParsingFailed(rceptNo, failureTtlHours);
+                            log.warn("[DART Disclosure Parsing] 재파싱 실패 (재시도 TTL={}h): rceptNo={}",
+                                    failureTtlHours, rceptNo, e);
                         }
                     }
                 }, disclosureParsingPool))
