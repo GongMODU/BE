@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Getter;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -112,12 +113,26 @@ public class DisclosureFinancialStatementParser {
         return normalized.substring(start, end);
     }
 
+    // 사업연도 후보 추출 시 허용 범위
+    // - 상한: 작년 (사업보고서는 결산 후 다음 해 초에 제출되므로 가장 최신이 작년)
+    // - 하한: 상한에서 N년 전 (너무 옛날 연도가 끌려오지 않도록)
+    // 미래 연도(전환사채 만기·락업 해제·예측 등) 와 무관한 옛 연도(설립일 등) 를 모두 배제하기 위함
+    private static final int FUTURE_YEAR_BUFFER = 0;
+    private static final int PAST_YEAR_BUFFER = 2;
+
     private List<String> findRecentYears(String section, int recentYears) {
+        int latestAllowed = LocalDate.now().minusYears(1).getYear() + FUTURE_YEAR_BUFFER;
+        int earliestAllowed = latestAllowed - Math.max(1, recentYears) - PAST_YEAR_BUFFER;
+
         Set<String> years = new LinkedHashSet<>();
         Matcher matcher = YEAR_PATTERN.matcher(section);
 
         while (matcher.find()) {
-            years.add(matcher.group(1));
+            String yearStr = matcher.group(1);
+            int year = Integer.parseInt(yearStr);
+            if (year >= earliestAllowed && year <= latestAllowed) {
+                years.add(yearStr);
+            }
         }
 
         return years.stream()
