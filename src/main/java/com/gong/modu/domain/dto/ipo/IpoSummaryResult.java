@@ -12,7 +12,7 @@ public class IpoSummaryResult {
     private String companySummary;
     private String financialSummary;
     private SummarySection investorProtectionSummary;
-    private SummarySection investmentPointSummary;
+    private SummarySection mergerInfoSummary;
     private List<RiskItem> riskSummary;
 
     @Getter

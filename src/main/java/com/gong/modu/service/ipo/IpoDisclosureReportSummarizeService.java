@@ -68,7 +68,7 @@ public class IpoDisclosureReportSummarizeService {
                 result.getCompanySummary(),
                 result.getFinancialSummary(),
                 serializeSummarySection(result.getInvestorProtectionSummary()),
-                serializeSummarySection(result.getInvestmentPointSummary()),
+                serializeSummarySection(result.getMergerInfoSummary()),
                 serializeRiskItems(result.getRiskSummary()),
                 SummaryPrompts.IPO_SUMMARY_VERSION
         );

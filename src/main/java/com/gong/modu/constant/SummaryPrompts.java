@@ -55,6 +55,7 @@ public final class SummaryPrompts {
             "- 내용: 재무 상태 전반을 관통하는 맥락 위주 설명. 수치 자체는 나열하지 말 것\n" +
             "- 톤: \"왜 이런 수치인지\" 맥락 중심\n\n" +
             "### 3. investorProtectionSummary\n" +
+            "- 필수 항목: SPAC/일반 공모주 구분 없이 반드시 생성할 것. null 반환 금지.\n" +
             "- 형식: JSON 객체\n" +
             "  {\n" +
             "    \"highlight\": \"50자 이내 핵심 1문장\",\n" +
@@ -62,13 +63,13 @@ public final class SummaryPrompts {
             "      { \"title\": \"항목명\", \"content\": \"2~3문장, 80자 이내\" }\n" +
             "    ]\n" +
             "  }\n" +
-            "- SPAC인 경우 항목: 공모 예치금 / 예치 목적 / 운용 자금\n" +
+            "- SPAC인 경우 항목: 공모 예치금 / 환매청구권 / 운용 자금\n" +
             "- 일반 공모주인 경우 항목: 보호예수 / 환매청구권 / 의무보유확약 / 청약증거금 환불\n" +
             "- 입력 데이터에 존재하는 항목만 포함할 것\n" +
             "- 톤: 안심시키는 톤\n\n" +
-            "### 4. investmentPointSummary\n" +
+            "### 4. mergerInfoSummary\n" +
             "- SPAC이 아닌 경우 반드시 null 반환\n" +
-            "- SPAC인 경우:\n" +
+            "- SPAC인 경우: 합병 목표 및 유효 기한 정보를 담는 필드\n" +
             "  {\n" +
             "    \"highlight\": \"50자 이내 핵심 1문장\",\n" +
             "    \"items\": [\n" +
@@ -95,7 +96,7 @@ public final class SummaryPrompts {
             "      { \"title\": \"string\", \"content\": \"string\" }\n" +
             "    ]\n" +
             "  },\n" +
-            "  \"investmentPointSummary\": {\n" +
+            "  \"mergerInfoSummary\": {\n" +
             "    \"highlight\": \"string\",\n" +
             "    \"items\": [\n" +
             "      { \"title\": \"string\", \"content\": \"string\" }\n" +

@@ -1,10 +1,12 @@
 package com.gong.modu.controller;
 
+import com.gong.modu.domain.dto.ipo.IpoDetailResponse;
 import com.gong.modu.domain.dto.ipo.IpoDisclosureReportResponse;
 import com.gong.modu.domain.dto.ipo.IpoEventSearchItemResponse;
 import com.gong.modu.domain.dto.ipo.IpoFinancialResponse;
 import com.gong.modu.domain.dto.ipo.IpoHomeItemResponse;
 import com.gong.modu.domain.enums.ipo.IpoScheduleFilter;
+import com.gong.modu.service.ipo.IpoDetailQueryService;
 import com.gong.modu.service.ipo.IpoDisclosureReportQueryService;
 import com.gong.modu.service.ipo.IpoFinancialQueryService;
 import com.gong.modu.service.ipo.IpoHomeQueryService;
@@ -30,6 +32,7 @@ public class IpoController {
     private final IpoDisclosureReportQueryService queryService;
     private final IpoFinancialQueryService financialQueryService;
     private final IpoHomeQueryService homeQueryService;
+    private final IpoDetailQueryService detailQueryService;
 
     @Operation(
             summary = "홈 화면 청약 일정 리스트 조회",
@@ -79,9 +82,43 @@ public class IpoController {
         return ResponseEntity.ok(homeQueryService.searchIpoEvents(keyword));
     }
 
+    @Operation(
+            summary = "공모주 상세 AI 요약 조회",
+            description = """
+                    공모주 상세 페이지의 AI 요약 섹션 전체를 반환합니다.
+
+                    응답 필드:
+                    - `companyName` / `isSpac` / `establishedAt` / `listingDate` — DB에서 직접 제공하는 회사 기본 정보
+                    - `companySummary` — 기업 유형·목적·설립/상장일 텍스트 요약
+                    - `financialSummary` — 재무 상태 맥락 설명 (차트 수치는 /financials 엔드포인트 사용)
+                    - `investorProtectionSummary` — 투자자 보호 안전장치 (SPAC/일반 공모주 모두 항상 존재)
+                    - `mergerInfoSummary` — 합병 목표 및 유효 기한 (SPAC 전용, 일반 공모주는 null)
+                    - `riskSummary` — 주요 리스크 항목 배열
+                    """
+    )
     @GetMapping("/{ipoEventId}/disclosure")
     public ResponseEntity<IpoDisclosureReportResponse> getDisclosureReport(@PathVariable Long ipoEventId) {
         return ResponseEntity.ok(queryService.getDisclosureReport(ipoEventId));
+    }
+
+    @Operation(
+            summary = "공모주 상세 정보 조회 (청약·예측·기업 탭)",
+            description = """
+                    기능명세서 3.1.3 공모주 상세 정보 화면의 청약·예측·기업 탭 데이터를 반환합니다.
+
+                    응답 필드:
+                    - `signalLevel` — 핵심 지표 신호등 등급 (GREEN/YELLOW/RED), 지표 부족 시 null
+                    - `riskScore` — 신호등 산출 위험 점수 (0~100), 지표 부족 시 null
+                    - `subscription` — 청약 탭: 청약일정, 경쟁률, 배정수량
+                    - `forecast` — 예측 탭: 수요예측일정, 공모가, 의무확약·기관경쟁률
+                    - `company` — 기업 탭: 최근 사업연도 재무, 공모규모, 증권사 목록
+
+                    AI 요약은 `GET /{ipoEventId}/disclosure`, 재무 차트는 `GET /{ipoEventId}/financials` 를 별도 호출하세요.
+                    """
+    )
+    @GetMapping("/{ipoEventId}/detail")
+    public ResponseEntity<IpoDetailResponse> getDetail(@PathVariable Long ipoEventId) {
+        return ResponseEntity.ok(detailQueryService.getDetail(ipoEventId));
     }
 
     // 재무 차트용 연간 재무 하이라이트 조회 / 최신 2개년, bsnsYear 오름차순

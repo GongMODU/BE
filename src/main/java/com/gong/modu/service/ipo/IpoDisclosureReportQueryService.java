@@ -3,7 +3,9 @@ package com.gong.modu.service.ipo;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gong.modu.domain.dto.ipo.IpoDisclosureReportResponse;
+import com.gong.modu.domain.entity.ipo.Company;
 import com.gong.modu.domain.entity.ipo.IpoDisclosureReport;
+import com.gong.modu.domain.entity.ipo.IpoEvent;
 import com.gong.modu.exception.CustomException;
 import com.gong.modu.exception.ErrorCode;
 import com.gong.modu.repository.ipo.IpoDisclosureReportRepository;
@@ -31,18 +33,30 @@ public class IpoDisclosureReportQueryService {
         }
 
         IpoDisclosureReport report = reports.get(0);
+        IpoEvent ipoEvent = report.getIpoEvent();
+        Company company = ipoEvent.getCompany();
+        boolean isSpac = company.getCorpName().contains("스팩")
+                || company.getCorpName().toUpperCase().contains("SPAC");
 
         if (report.getCompanySummary() == null) {
             return IpoDisclosureReportResponse.builder()
+                    .companyName(company.getCorpName())
+                    .isSpac(isSpac)
+                    .establishedAt(company.getEstablishedAt())
+                    .listingDate(ipoEvent.getListingDate())
                     .summaryVersion(report.getSummaryVersion())
                     .build();
         }
 
         return IpoDisclosureReportResponse.builder()
+                .companyName(company.getCorpName())
+                .isSpac(isSpac)
+                .establishedAt(company.getEstablishedAt())
+                .listingDate(ipoEvent.getListingDate())
                 .companySummary(report.getCompanySummary())
                 .financialSummary(report.getFinancialSummary())
                 .investorProtectionSummary(deserializeSummarySection(report.getInvestorProtectionSummary()))
-                .investmentPointSummary(deserializeSummarySection(report.getInvestmentPointSummary()))
+                .mergerInfoSummary(deserializeSummarySection(report.getInvestmentPointSummary()))
                 .riskSummary(deserializeRiskItems(report.getRiskSummary()))
                 .summaryVersion(report.getSummaryVersion())
                 .build();
