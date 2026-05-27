@@ -1,10 +1,11 @@
 package com.gong.modu.service.ipo;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gong.modu.domain.dto.ipo.IpoDisclosureReportResponse;
+import com.gong.modu.domain.entity.ipo.Company;
 import com.gong.modu.domain.entity.ipo.IpoDisclosureReport;
+import com.gong.modu.domain.entity.ipo.IpoEvent;
 import com.gong.modu.exception.CustomException;
 import com.gong.modu.exception.ErrorCode;
 import com.gong.modu.repository.ipo.IpoDisclosureReportRepository;
@@ -32,29 +33,51 @@ public class IpoDisclosureReportQueryService {
         }
 
         IpoDisclosureReport report = reports.get(0);
+        IpoEvent ipoEvent = report.getIpoEvent();
+        Company company = ipoEvent.getCompany();
+        boolean isSpac = company.getCorpName().contains("스팩")
+                || company.getCorpName().toUpperCase().contains("SPAC");
 
         if (report.getCompanySummary() == null) {
             return IpoDisclosureReportResponse.builder()
+                    .companyName(company.getCorpName())
+                    .isSpac(isSpac)
+                    .establishedAt(company.getEstablishedAt())
+                    .listingDate(ipoEvent.getListingDate())
                     .summaryVersion(report.getSummaryVersion())
                     .build();
         }
 
         return IpoDisclosureReportResponse.builder()
-                .companySummary(report.getCompanySummary())
-                .financialSummary(report.getFinancialSummary())
-                .investorProtectionSummary(deserializeNode(report.getInvestorProtectionSummary()))
-                .investmentPointSummary(deserializeNode(report.getInvestmentPointSummary()))
+                .companyName(company.getCorpName())
+                .isSpac(isSpac)
+                .establishedAt(company.getEstablishedAt())
+                .listingDate(ipoEvent.getListingDate())
+                .companySummary(deserializeStringList(report.getCompanySummary()))
+                .financialSummary(deserializeStringList(report.getFinancialSummary()))
+                .investorProtectionSummary(deserializeSummarySection(report.getInvestorProtectionSummary()))
+                .mergerInfoSummary(deserializeSummarySection(report.getInvestmentPointSummary()))
                 .riskSummary(deserializeRiskItems(report.getRiskSummary()))
                 .summaryVersion(report.getSummaryVersion())
                 .build();
     }
 
-    private JsonNode deserializeNode(String json) {
+    private List<String> deserializeStringList(String json) {
         if (json == null) return null;
         try {
-            return objectMapper.readTree(json);
+            return objectMapper.readValue(json, new TypeReference<List<String>>() {});
         } catch (Exception e) {
-            log.warn("JsonNode 역직렬화 실패: {}", e.getMessage());
+            log.warn("문장 배열 역직렬화 실패: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private IpoDisclosureReportResponse.SummarySection deserializeSummarySection(String json) {
+        if (json == null) return null;
+        try {
+            return objectMapper.readValue(json, IpoDisclosureReportResponse.SummarySection.class);
+        } catch (Exception e) {
+            log.warn("SummarySection 역직렬화 실패: {}", e.getMessage());
             return null;
         }
     }

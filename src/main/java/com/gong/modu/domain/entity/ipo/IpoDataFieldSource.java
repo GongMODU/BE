@@ -54,7 +54,6 @@ public class IpoDataFieldSource extends BaseTimeEntity {
     private String sourceReference;
 
     // 출처 관련 보충 설명
-    @Lob
     @Column(name = "source_note", columnDefinition = "TEXT")
     private String sourceNote;
 

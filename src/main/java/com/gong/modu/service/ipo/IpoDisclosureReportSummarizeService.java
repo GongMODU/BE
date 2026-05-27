@@ -1,7 +1,6 @@
 package com.gong.modu.service.ipo;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gong.modu.constant.SummaryPrompts;
 import com.gong.modu.domain.dto.anthropic.AnthropicMessageDto;
@@ -63,13 +62,12 @@ public class IpoDisclosureReportSummarizeService {
         String responseJson = anthropicService.call(messages, MAX_TOKENS);
 
         IpoSummaryResult result = parseResponse(responseJson, reportId);
-        if (result == null) return;
 
         report.updateSummary(
-                result.getCompanySummary(),
-                result.getFinancialSummary(),
-                serializeNode(result.getInvestorProtectionSummary()),
-                serializeNode(result.getInvestmentPointSummary()),
+                serializeStringList(result.getCompanySummary()),
+                serializeStringList(result.getFinancialSummary()),
+                serializeSummarySection(result.getInvestorProtectionSummary()),
+                serializeSummarySection(result.getMergerInfoSummary()),
                 serializeRiskItems(result.getRiskSummary()),
                 SummaryPrompts.IPO_SUMMARY_VERSION
         );
@@ -231,16 +229,35 @@ public class IpoDisclosureReportSummarizeService {
 
     private IpoSummaryResult parseResponse(String json, Long reportId) {
         try {
-            return objectMapper.readValue(json, IpoSummaryResult.class);
+            String cleaned = json.trim();
+            if (cleaned.startsWith("```")) {
+                cleaned = cleaned.replaceAll("(?s)^```[a-zA-Z]*\\r?\\n?", "").replaceAll("(?s)\\n?```$", "").trim();
+            }
+            return objectMapper.readValue(cleaned, IpoSummaryResult.class);
         } catch (JsonProcessingException e) {
             log.warn("[IpoSummarize] 응답 파싱 실패 reportId={}: {}", reportId, e.getMessage());
+            throw new RuntimeException("응답 파싱 실패: " + e.getMessage(), e);
+        }
+    }
+
+    private String serializeSummarySection(IpoSummaryResult.SummarySection section) {
+        if (section == null) return null;
+        try {
+            return objectMapper.writeValueAsString(section);
+        } catch (JsonProcessingException e) {
+            log.warn("[IpoSummarize] SummarySection 직렬화 실패: {}", e.getMessage());
             return null;
         }
     }
 
-    private String serializeNode(JsonNode node) {
-        if (node == null || node.isNull()) return null;
-        return node.toString();
+    private String serializeStringList(List<String> lines) {
+        if (lines == null || lines.isEmpty()) return null;
+        try {
+            return objectMapper.writeValueAsString(lines);
+        } catch (JsonProcessingException e) {
+            log.warn("[IpoSummarize] 문장 배열 직렬화 실패: {}", e.getMessage());
+            return null;
+        }
     }
 
     private String serializeRiskItems(List<IpoSummaryResult.RiskItem> items) {

@@ -102,7 +102,6 @@ public class UserSubscriptionHistory extends BaseTimeEntity {
     private LocalDate sellDate;
 
     // 사용자가 남긴 메모
-    @Lob
     @Column(name = "memo", columnDefinition = "TEXT")
     private String memo;
 

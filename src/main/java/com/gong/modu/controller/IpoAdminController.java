@@ -1,7 +1,12 @@
 package com.gong.modu.controller;
 
 import com.gong.modu.domain.entity.ipo.IpoDisclosureReport;
+import com.gong.modu.domain.enums.ipo.FinancialStatementType;
+import com.gong.modu.domain.enums.ipo.ReportCode;
+import com.gong.modu.exception.CustomException;
+import com.gong.modu.exception.ErrorCode;
 import com.gong.modu.repository.ipo.IpoDisclosureReportRepository;
+import com.gong.modu.repository.ipo.IpoEventRepository;
 import com.gong.modu.service.ipo.IpoDisclosureReportSummarizeService;
 import com.gong.modu.service.pipeline.DartCompanySyncService;
 import com.gong.modu.service.pipeline.DartDisclosureParsingService;
@@ -14,11 +19,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -45,7 +46,11 @@ public class IpoAdminController {
     private final DartCompanySyncService dartCompanySyncService;
     private final DartDisclosureParsingService dartDisclosureParsingService;
     private final DartFinancialSyncService dartFinancialSyncService;
+
     private final RedisUtil redisUtil;
+
+    private final IpoEventRepository ipoEventRepository;
+
 
     @Operation(
             summary = "특정 IPO의 공시 요약 강제 재생성",
@@ -73,6 +78,30 @@ public class IpoAdminController {
         }
 
         return Map.of("message", "요약 완료 (성공: " + success + "건, 실패: " + fail + "건)");
+    }
+
+    @Operation(
+            summary = "전체 공시 리포트 AI 요약 일괄 재생성",
+            description = "DB에 저장된 모든 공시 리포트를 순회하며 재요약. 프롬프트 구조 변경 후 기존 데이터 마이그레이션 용도."
+    )
+    @PostMapping("/admin/ipo/summarize-all")
+    public Map<String, String> summarizeAll() {
+        List<IpoDisclosureReport> all = reportRepository.findAll();
+
+        int success = 0;
+        int fail = 0;
+
+        for (IpoDisclosureReport report : all) {
+            try {
+                summarizeService.summarize(report.getId());
+                success++;
+            } catch (Exception e) {
+                log.warn("[IpoAdmin] 일괄 요약 실패 reportId={}: {}", report.getId(), e.getMessage());
+                fail++;
+            }
+        }
+
+        return Map.of("message", "일괄 요약 완료 (성공: " + success + "건, 실패: " + fail + "건)");
     }
 
     @Operation(
@@ -264,5 +293,37 @@ public class IpoAdminController {
                 "updatedCount", updated,
                 "message", "IPO 상태 재계산 완료 (" + updated + " 건 변경)"
         ));
+    }
+
+    @Operation(
+            summary = "특정 IPO 기업 재무 하이라이트 DART 동기화",
+            description = "years 파라미터로 지정한 사업연도의 재무 데이터를 DART에서 가져와 DB에 저장. CFS(연결) → OFS(개별) 순서로 시도."
+    )
+    @PostMapping("/admin/ipo/{ipoEventId}/financial-sync")
+    public Map<String, String> syncFinancials(
+            @PathVariable Long ipoEventId,
+            @Parameter(description = "동기화할 사업연도 목록 (예: 2023,2024)")
+            @RequestParam List<String> years
+    ) {
+        Long companyId = ipoEventRepository.findById(ipoEventId)
+                .orElseThrow(() -> new CustomException(ErrorCode.IPO_EVENT_NOT_FOUND))
+                .getCompany().getId();
+
+        int success = 0;
+        int fail = 0;
+
+        for (String year : years) {
+            for (FinancialStatementType fsType : List.of(FinancialStatementType.CFS, FinancialStatementType.OFS)) {
+                try {
+                    dartFinancialSyncService.syncFinancialHighlight(companyId, year, ReportCode.ANNUAL, fsType);
+                    success++;
+                } catch (Exception e) {
+                    log.warn("[IpoAdmin] 재무 동기화 실패 companyId={}, year={}, type={}: {}", companyId, year, fsType, e.getMessage());
+                    fail++;
+                }
+            }
+        }
+
+        return Map.of("message", "재무 동기화 완료 (성공: " + success + "건, 실패: " + fail + "건)");
     }
 }

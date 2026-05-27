@@ -47,35 +47,36 @@ public final class SummaryPrompts {
             "- 숫자 수치는 직접 나열하지 마세요. 수치는 프론트에서 별도 표시합니다.\n\n" +
             "## 필드별 규칙\n\n" +
             "### 1. companySummary\n" +
-            "- 형식: 2~3문장, 100자 이내\n" +
+            "- 형식: 문장 배열, 2~3개 문장, 각 문장 50자 이내\n" +
             "- 내용: 기업 유형(SPAC 여부), 주요 사업 또는 목적, 설립일과 상장일\n" +
             "- 톤: 중립적, 사실 전달\n\n" +
             "### 2. financialSummary\n" +
-            "- 형식: 서술형 텍스트, 150자 이내\n" +
+            "- 형식: 문장 배열, 2~3개 문장, 각 문장 75자 이내\n" +
             "- 내용: 재무 상태 전반을 관통하는 맥락 위주 설명. 수치 자체는 나열하지 말 것\n" +
             "- 톤: \"왜 이런 수치인지\" 맥락 중심\n\n" +
             "### 3. investorProtectionSummary\n" +
+            "- 필수 항목: SPAC/일반 공모주 구분 없이 반드시 생성할 것. null 반환 금지.\n" +
             "- 형식: JSON 객체\n" +
             "  {\n" +
             "    \"highlight\": \"50자 이내 핵심 1문장\",\n" +
-            "    \"items\": {\n" +
-            "      \"항목명\": \"2~3문장, 80자 이내\"\n" +
-            "    }\n" +
+            "    \"items\": [\n" +
+            "      { \"title\": \"항목명\", \"content\": \"2~3문장, 80자 이내\" }\n" +
+            "    ]\n" +
             "  }\n" +
-            "- SPAC인 경우 항목: 공모 예치금 / 예치 목적 / 운용 자금\n" +
+            "- SPAC인 경우 항목: 공모 예치금 / 환매청구권 / 운용 자금\n" +
             "- 일반 공모주인 경우 항목: 보호예수 / 환매청구권 / 의무보유확약 / 청약증거금 환불\n" +
             "- 입력 데이터에 존재하는 항목만 포함할 것\n" +
             "- 톤: 안심시키는 톤\n\n" +
-            "### 4. investmentPointSummary\n" +
+            "### 4. mergerInfoSummary\n" +
             "- SPAC이 아닌 경우 반드시 null 반환\n" +
-            "- SPAC인 경우:\n" +
+            "- SPAC인 경우: 합병 목표 및 유효 기한 정보를 담는 필드\n" +
             "  {\n" +
             "    \"highlight\": \"50자 이내 핵심 1문장\",\n" +
-            "    \"items\": {\n" +
-            "      \"합병 대상 산업\": \"string\",\n" +
-            "      \"합병 기한\": \"string\",\n" +
-            "      \"기한 초과 시\": \"string\"\n" +
-            "    }\n" +
+            "    \"items\": [\n" +
+            "      { \"title\": \"합병 대상 산업\", \"content\": \"string\" },\n" +
+            "      { \"title\": \"합병 기한\", \"content\": \"string\" },\n" +
+            "      { \"title\": \"기한 초과 시\", \"content\": \"string\" }\n" +
+            "    ]\n" +
             "  }\n" +
             "- 입력 데이터에 존재하는 항목만 포함할 것\n" +
             "- 톤: 중립적\n\n" +
@@ -87,15 +88,19 @@ public final class SummaryPrompts {
             "## 출력 형식\n" +
             "아래 JSON만 반환. 다른 텍스트, 설명, 마크다운 코드블록(```) 없이 순수 JSON만 반환.\n\n" +
             "{\n" +
-            "  \"companySummary\": \"string\",\n" +
-            "  \"financialSummary\": \"string\",\n" +
+            "  \"companySummary\": [\"string\", \"string\"],\n" +
+            "  \"financialSummary\": [\"string\", \"string\"],\n" +
             "  \"investorProtectionSummary\": {\n" +
             "    \"highlight\": \"string\",\n" +
-            "    \"items\": { \"항목명\": \"string\" }\n" +
+            "    \"items\": [\n" +
+            "      { \"title\": \"string\", \"content\": \"string\" }\n" +
+            "    ]\n" +
             "  },\n" +
-            "  \"investmentPointSummary\": {\n" +
+            "  \"mergerInfoSummary\": {\n" +
             "    \"highlight\": \"string\",\n" +
-            "    \"items\": { \"항목명\": \"string\" }\n" +
+            "    \"items\": [\n" +
+            "      { \"title\": \"string\", \"content\": \"string\" }\n" +
+            "    ]\n" +
             "  } | null,\n" +
             "  \"riskSummary\": [\n" +
             "    { \"title\": \"string\", \"content\": \"string\" }\n" +
