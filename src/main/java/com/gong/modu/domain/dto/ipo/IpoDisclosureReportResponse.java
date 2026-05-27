@@ -1,6 +1,5 @@
 package com.gong.modu.domain.dto.ipo;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import lombok.*;
 
 import java.util.List;
@@ -13,10 +12,26 @@ public class IpoDisclosureReportResponse {
 
     private String companySummary;
     private String financialSummary;
-    private JsonNode investorProtectionSummary;
-    private JsonNode investmentPointSummary;
+    private SummarySection investorProtectionSummary;
+    private SummarySection investmentPointSummary;
     private List<RiskItem> riskSummary;
     private String summaryVersion;
+
+    @Getter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class SummarySection {
+        private String highlight;
+        private List<SummaryItem> items;
+    }
+
+    @Getter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class SummaryItem {
+        private String title;
+        private String content;
+    }
 
     @Getter
     @NoArgsConstructor

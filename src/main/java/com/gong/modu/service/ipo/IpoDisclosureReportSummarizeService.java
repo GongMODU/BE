@@ -1,7 +1,6 @@
 package com.gong.modu.service.ipo;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gong.modu.constant.SummaryPrompts;
 import com.gong.modu.domain.dto.anthropic.AnthropicMessageDto;
@@ -67,8 +66,8 @@ public class IpoDisclosureReportSummarizeService {
         report.updateSummary(
                 result.getCompanySummary(),
                 result.getFinancialSummary(),
-                serializeNode(result.getInvestorProtectionSummary()),
-                serializeNode(result.getInvestmentPointSummary()),
+                serializeSummarySection(result.getInvestorProtectionSummary()),
+                serializeSummarySection(result.getInvestmentPointSummary()),
                 serializeRiskItems(result.getRiskSummary()),
                 SummaryPrompts.IPO_SUMMARY_VERSION
         );
@@ -241,9 +240,14 @@ public class IpoDisclosureReportSummarizeService {
         }
     }
 
-    private String serializeNode(JsonNode node) {
-        if (node == null || node.isNull()) return null;
-        return node.toString();
+    private String serializeSummarySection(IpoSummaryResult.SummarySection section) {
+        if (section == null) return null;
+        try {
+            return objectMapper.writeValueAsString(section);
+        } catch (JsonProcessingException e) {
+            log.warn("[IpoSummarize] SummarySection 직렬화 실패: {}", e.getMessage());
+            return null;
+        }
     }
 
     private String serializeRiskItems(List<IpoSummaryResult.RiskItem> items) {
