@@ -2,6 +2,7 @@ package com.gong.modu.domain.dto.ipo;
 
 import lombok.*;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @Getter
@@ -10,10 +11,22 @@ import java.util.List;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class IpoDisclosureReportResponse {
 
-    private String companySummary;
-    private String financialSummary;
+    // 회사 기본 정보 (텍스트 파싱 없이 DB에서 직접 제공)
+    private String companyName;
+    private Boolean isSpac;
+    private LocalDate establishedAt;
+    private LocalDate listingDate;
+
+    // AI 요약 필드 (각 문장을 배열 원소로 반환)
+    private List<String> companySummary;
+    private List<String> financialSummary;
+
+    // 투자자 보호 안전장치 요약 (SPAC/일반 공모주 모두 항상 존재)
     private SummarySection investorProtectionSummary;
-    private SummarySection investmentPointSummary;
+
+    // 합병 목표 및 유효 기한 요약 (SPAC 전용, 일반 공모주는 null)
+    private SummarySection mergerInfoSummary;
+
     private List<RiskItem> riskSummary;
     private String summaryVersion;
 

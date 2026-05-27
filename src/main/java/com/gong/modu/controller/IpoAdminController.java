@@ -76,6 +76,30 @@ public class IpoAdminController {
     }
 
     @Operation(
+            summary = "전체 공시 리포트 AI 요약 일괄 재생성",
+            description = "DB에 저장된 모든 공시 리포트를 순회하며 재요약. 프롬프트 구조 변경 후 기존 데이터 마이그레이션 용도."
+    )
+    @PostMapping("/admin/ipo/summarize-all")
+    public Map<String, String> summarizeAll() {
+        List<IpoDisclosureReport> all = reportRepository.findAll();
+
+        int success = 0;
+        int fail = 0;
+
+        for (IpoDisclosureReport report : all) {
+            try {
+                summarizeService.summarize(report.getId());
+                success++;
+            } catch (Exception e) {
+                log.warn("[IpoAdmin] 일괄 요약 실패 reportId={}: {}", report.getId(), e.getMessage());
+                fail++;
+            }
+        }
+
+        return Map.of("message", "일괄 요약 완료 (성공: " + success + "건, 실패: " + fail + "건)");
+    }
+
+    @Operation(
             summary = "최근 IPO 공시 발견·기업·IPO 데이터 동기화",
             description = """
                     DART 시장 전체 공시에서 공모주 관련 기업을 찾아 기업 정보 + IPO 메타 데이터를 DB에 동기화한다.

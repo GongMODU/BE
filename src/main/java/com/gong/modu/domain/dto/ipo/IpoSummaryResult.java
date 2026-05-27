@@ -9,10 +9,10 @@ import java.util.List;
 @NoArgsConstructor
 public class IpoSummaryResult {
 
-    private String companySummary;
-    private String financialSummary;
+    private List<String> companySummary;
+    private List<String> financialSummary;
     private SummarySection investorProtectionSummary;
-    private SummarySection investmentPointSummary;
+    private SummarySection mergerInfoSummary;
     private List<RiskItem> riskSummary;
 
     @Getter
