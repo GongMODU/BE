@@ -1,7 +1,6 @@
 package com.gong.modu.config;
 
-import io.netty.handler.ssl.SslContext;
-import io.netty.handler.ssl.SslContextBuilder;
+import io.netty.channel.ChannelOption;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -9,7 +8,7 @@ import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.netty.http.client.HttpClient;
 
-import javax.net.ssl.SSLException;
+import java.time.Duration;
 
 // 외부 HTTP API 호출에 사용할 WebClient Bean들을 등록하는 설정 클래스
 @Configuration
@@ -25,17 +24,15 @@ public class WebClientConfig {
     private String kisBaseUrl;
 
     @Bean
-    public WebClient dartWebClient() throws SSLException {
-        // DART(opendart.fss.or.kr) 는 TLSv1.2 + RSA-only cipher(AES128-GCM-SHA256) 만 받음.
-        // Java 17 기본 cipher set 이 신규 cipher 우선이라 협상 실패하므로 TLSv1.2 만 강제하고
-        // cipher 선택은 JVM 옵션의 disabledAlgorithms 완화로 RSA cipher 가 협상에 포함되도록 함.
-        // (JAVA_TOOL_OPTIONS 에서 disabledAlgorithms 조정함 - docker-compose.yml 참고)
-        SslContext sslContext = SslContextBuilder.forClient()
-                .protocols("TLSv1.2")
-                .build();
-
+    public WebClient dartWebClient() {
+        // TLS 관련 설정(TLSv1.2 강제, RSA cipher 허용 등)은 JVM 옵션과 ModuApplication.main()
+        // 의 Security.setProperty 로 처리하므로 여기선 명시하지 않음 (Netty 기본 SSL 사용).
+        // 명시적 SslContext 부여 시 Netty/JDK SSL stack 과 충돌해 핸드셰이크 행 발생 가능.
+        //
+        // 무한 대기 방지용 timeout 만 명시.
         HttpClient httpClient = HttpClient.create()
-                .secure(sslSpec -> sslSpec.sslContext(sslContext));
+                .responseTimeout(Duration.ofSeconds(15))
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 5_000);
 
         return WebClient.builder()
                 .baseUrl(dartBaseUrl)
