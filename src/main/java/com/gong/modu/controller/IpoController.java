@@ -115,11 +115,16 @@ public class IpoController {
                     - `company` — 기업 탭: 최근 사업연도 재무, 공모규모, 증권사 목록
 
                     AI 요약은 `GET /{ipoEventId}/disclosure`, 재무 차트는 `GET /{ipoEventId}/financials` 를 별도 호출하세요.
+
+                    - 로그인 사용자만 `favorited`가 정확히 반영되며, 비로그인은 항상 false.
                     """
     )
     @GetMapping("/{ipoEventId}/detail")
-    public ResponseEntity<IpoDetailResponse> getDetail(@PathVariable Long ipoEventId) {
-        return ResponseEntity.ok(detailQueryService.getDetail(ipoEventId));
+    public ResponseEntity<IpoDetailResponse> getDetail(
+            @PathVariable Long ipoEventId,
+            @AuthenticationPrincipal Long userId
+    ) {
+        return ResponseEntity.ok(detailQueryService.getDetail(ipoEventId, userId));
     }
 
     // 재무 차트용 연간 재무 하이라이트 조회 / 최신 2개년, bsnsYear 오름차순

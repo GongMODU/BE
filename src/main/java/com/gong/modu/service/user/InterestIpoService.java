@@ -81,6 +81,17 @@ public class InterestIpoService {
                 .toList();
     }
 
+    // 단건 상세 화면에서 찜 여부를 확인하는 용도 (existsByUserAndIpoEventId 단일 쿼리)
+    @Transactional(readOnly = true)
+    public boolean isInterested(Long userId, Long ipoEventId) {
+        if (userId == null) {
+            return false;
+        }
+        return userRepository.findById(userId)
+                .map(user -> userInterestIpoRepository.existsByUserAndIpoEventId(user, ipoEventId))
+                .orElse(false);
+    }
+
     // 로그인 사용자의 관심 등록된 IpoEvent ID Set을 한 번에 조회
     // 홈 화면에서 isFavorited 표시 시 N+1 쿼리를 막기 위한 용도
     @Transactional(readOnly = true)

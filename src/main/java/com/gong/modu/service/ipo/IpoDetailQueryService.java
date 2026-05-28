@@ -9,6 +9,7 @@ import com.gong.modu.exception.ErrorCode;
 import com.gong.modu.repository.ipo.CompanyFinancialHighlightRepository;
 import com.gong.modu.repository.ipo.IpoEventBrokerRepository;
 import com.gong.modu.repository.ipo.IpoEventRepository;
+import com.gong.modu.service.user.InterestIpoService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,9 +27,10 @@ public class IpoDetailQueryService {
     private final IpoEventBrokerRepository ipoEventBrokerRepository;
     private final CompanyFinancialHighlightRepository financialRepository;
     private final IpoSignalCalculator ipoSignalCalculator;
+    private final InterestIpoService interestIpoService;
 
     @Transactional(readOnly = true)
-    public IpoDetailResponse getDetail(Long ipoEventId) {
+    public IpoDetailResponse getDetail(Long ipoEventId, Long userId) {
         IpoEvent event = ipoEventRepository.findById(ipoEventId)
                 .orElseThrow(() -> new CustomException(ErrorCode.IPO_EVENT_NOT_FOUND));
 
@@ -52,6 +54,7 @@ public class IpoDetailQueryService {
                 .subscription(buildSubscriptionTab(event, offering, metric))
                 .forecast(buildForecastTab(event, offering, metric))
                 .company(buildCompanyTab(offering, metric, latestFinancial, brokerNames))
+                .favorited(interestIpoService.isInterested(userId, ipoEventId))
                 .build();
     }
 

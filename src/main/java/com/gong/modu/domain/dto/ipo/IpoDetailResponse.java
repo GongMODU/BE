@@ -1,6 +1,7 @@
 package com.gong.modu.domain.dto.ipo;
 
 import com.gong.modu.domain.enums.ipo.SignalLevel;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -35,6 +36,9 @@ public class IpoDetailResponse {
 
     // 기업 탭 정보
     private CompanyTab company;
+
+    @Schema(description = "로그인 사용자의 관심 공모주(찜) 등록 여부. 비로그인 시 항상 false", example = "false")
+    private boolean favorited;
 
     // 청약 탭: 청약·배정 관련 정보
     @Getter
