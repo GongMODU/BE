@@ -18,10 +18,19 @@ import java.util.regex.Pattern;
 @Component
 public class DisclosureFinancialStatementParser {
 
-    // IPO 대상 회사의 매출액으로 신뢰 가능한 최소 임계값 (1억원).
-    // 평탄화된 텍스트에서 항목 번호나 페이지 번호 같은 작은 숫자가 매출액으로 잘못 매칭되는 경우를 차단.
-    // (실제 IPO 대상 회사는 보통 수십~수백억 단위. 0/null 은 매칭 자체가 없는 정상 케이스로 별도 처리.)
+    // === Sanity check 임계값 ===
+    // fallback parser 가 HTML 표 평탄화 후 line 기반으로 동작하므로 컬럼 매핑이 어긋날 수 있다.
+    // 잘못된 값을 사용자에게 노출하는 것보다 "데이터 없음" 으로 분기하는 것이 안전하므로 보수적으로 거부한다.
+
+    // 매출액 최소 임계값 (1억원). 평탄화된 텍스트에서 항목 번호·페이지 번호 같은 작은 숫자 차단.
     private static final long REVENUE_SANITY_MIN = 100_000_000L;
+
+    // 단일 항목 비현실적 상한 (100조원). 단위(백만원/천원) 오감지로 자릿수가 폭증한 케이스 차단.
+    private static final long AMOUNT_SANITY_MAX = 100_000_000_000_000L;
+
+    // 영업이익 절대값 대 매출액 비율 상한.
+    // 영업이익률은 통상 -300% ~ +50% 범위. 매출액의 10배를 넘는 영업이익(손실)은 컬럼 매핑 오류 신호.
+    private static final int OPERATING_PROFIT_TO_REVENUE_MAX_RATIO = 10;
 
     private static final Pattern YEAR_PATTERN = Pattern.compile("(20\\d{2})");
     private static final Pattern AMOUNT_PATTERN = Pattern.compile("\\(?-?\\d{1,3}(?:,\\d{3})+\\)?|\\(?-?\\d+\\)?");
@@ -64,12 +73,8 @@ public class DisclosureFinancialStatementParser {
                 continue;
             }
 
-            // 매출액 sanity check: 음수 또는 임계값 미만이면 잘못 매칭된 신호로 판단해 행 전체 폐기.
-            // (매출액과 다른 항목들이 같은 표에서 추출됐으므로 매출액이 의심스러우면 다른 값도 신뢰 불가)
-            // 매출액이 null 인 경우는 표에서 매출액 라인을 못 찾은 정상 케이스라 허용.
-            if (revenue != null && (revenue < 0 || revenue < REVENUE_SANITY_MIN)) {
-                log.warn("[DisclosureFinancialStatementParser] 매출액 sanity 실패 → 해당 연도 폐기: year={}, revenue={}",
-                        year, revenue);
+            if (!passesSanityChecks(year, revenue, operatingProfit, netIncome,
+                    assets, liabilities, equity)) {
                 continue;
             }
 
@@ -86,6 +91,43 @@ public class DisclosureFinancialStatementParser {
         }
 
         return highlights;
+    }
+
+    // 추출 결과의 일관성을 검증해 컬럼 매핑 오류·단위 오감지·잘못된 토큰 매칭을 차단.
+    // 하나라도 실패하면 해당 연도 행 전체 폐기 → 프론트는 FINANCIAL_TABLE_NOT_FOUND 분기.
+    private boolean passesSanityChecks(String year, Long revenue, Long operatingProfit, Long netIncome,
+                                       Long assets, Long liabilities, Long equity) {
+        // 1) 매출액은 가장 신뢰 가능한 앵커. null/음수/너무 작으면 표 매핑 자체를 신뢰 불가.
+        if (revenue == null) {
+            log.warn("[DisclosureFinancialStatementParser] sanity 실패(매출액 null → 표 매핑 신뢰 불가): year={}", year);
+            return false;
+        }
+        if (revenue < 0 || revenue < REVENUE_SANITY_MIN) {
+            log.warn("[DisclosureFinancialStatementParser] sanity 실패(매출액 비현실): year={}, revenue={}", year, revenue);
+            return false;
+        }
+
+        // 2) 단위 오감지(천원↔백만원) 등으로 자릿수가 폭증한 케이스 차단.
+        if (exceedsAmountCap(revenue) || exceedsAmountCap(operatingProfit) || exceedsAmountCap(netIncome)
+                || exceedsAmountCap(assets) || exceedsAmountCap(liabilities) || exceedsAmountCap(equity)) {
+            log.warn("[DisclosureFinancialStatementParser] sanity 실패(금액 자릿수 폭증): year={}, revenue={}, assets={}",
+                    year, revenue, assets);
+            return false;
+        }
+
+        // 3) 영업이익 절대값이 매출액 대비 비현실적으로 크면 컬럼 매핑 오류로 판단.
+        if (operatingProfit != null
+                && Math.abs(operatingProfit) > revenue * OPERATING_PROFIT_TO_REVENUE_MAX_RATIO) {
+            log.warn("[DisclosureFinancialStatementParser] sanity 실패(영업이익 vs 매출액 비율 비현실): year={}, revenue={}, operatingProfit={}",
+                    year, revenue, operatingProfit);
+            return false;
+        }
+
+        return true;
+    }
+
+    private boolean exceedsAmountCap(Long value) {
+        return value != null && Math.abs(value) > AMOUNT_SANITY_MAX;
     }
 
     // 재무 섹션 텍스트에서 금액 단위를 감지해 원 단위 배수를 반환
