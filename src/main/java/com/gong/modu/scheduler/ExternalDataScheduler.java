@@ -9,6 +9,7 @@ import com.gong.modu.service.pipeline.DartIpoSyncService;
 import com.gong.modu.service.pipeline.KisStockPriceSyncService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -37,6 +38,14 @@ public class ExternalDataScheduler {
     private final DartIpoSyncService dartIpoSyncService; // DART 공시/주요정보를 IPO 데이터로 동기화하는 서비스
     private final DartDisclosureParsingService dartDisclosureParsingService; // DART 공시 원문 다운/파싱 로직을 실행하는 서비스
     private final DartFinancialSyncService dartFinancialSyncService; // DART 재무제표 기반 재무 하이라이트 동기화 서비스
+
+    // AI 파이프라인(Claude 호출) 스케줄러 on/off 토글.
+    // 발표 기간 등 토큰 비용 일시 차단이 필요할 때 환경변수 SCHEDULER_AI_PIPELINES_ENABLED=false 로 끄고
+    // 발표 후 true 로 되돌리거나 환경변수를 제거하면 기본값 true 로 복원된다.
+    // 영향 대상: parseUnparsedDartDisclosureDocuments (02:00, 08:00), reparseActiveIpos (03:00)
+    // 영향 외:   syncIpoData / refreshIpoStatuses / syncActiveIpoFinancialHighlights / syncListedCompanyPrices
+    @Value("${scheduler.ai-pipelines.enabled:true}")
+    private boolean aiPipelinesEnabled;
 
     // 시장 전체에서 최근 공모주 관련 공시를 찾아 기업·IPO 데이터를 동기화하는 스케줄러 메서드
     // 공시 원문 파싱 스케줄러(새벽 2시)보다 먼저 실행되도록 새벽 1시로 설정
@@ -90,6 +99,10 @@ public class ExternalDataScheduler {
     // 새벽 2시(DART 동기화 완료 후) + 오전 8시(당일 업무 전 보완 처리) 하루 2회 실행
     @Scheduled(cron = "0 0 2,8 * * *")
     public void parseUnparsedDartDisclosureDocuments() {
+        if (!aiPipelinesEnabled) {
+            log.info("[Scheduler] AI 파이프라인 비활성(scheduler.ai-pipelines.enabled=false) → parse-unparsed skip");
+            return;
+        }
         log.info("[Scheduler] DART 공시 원문 ZIP 파싱 시작");
         try {
             dartDisclosureParsingService.parseUnparsedDisclosureReports(50);
@@ -107,6 +120,10 @@ public class ExternalDataScheduler {
     // 새벽 3시 (parse-unparsed 2시 완료 후) 실행
     @Scheduled(cron = "0 0 3 * * *")
     public void reparseActiveIpos() {
+        if (!aiPipelinesEnabled) {
+            log.info("[Scheduler] AI 파이프라인 비활성(scheduler.ai-pipelines.enabled=false) → reparse-active skip");
+            return;
+        }
         log.info("[Scheduler] 활성 IPO 일괄 재파싱 시작");
         try {
             dartDisclosureParsingService.reparseAllActiveIpos();
