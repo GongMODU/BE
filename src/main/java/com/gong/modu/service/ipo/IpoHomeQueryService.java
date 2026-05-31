@@ -146,8 +146,7 @@ public class IpoHomeQueryService {
             return null;
         }
 
-        String corpName = event.getCompany().getCorpName();
-        if (corpName != null && (corpName.contains("기업인수목적") || corpName.contains("스팩"))) {
+        if (event.getCompany().isSpac()) {
             return SignalUnavailableReason.SPAC;
         }
 

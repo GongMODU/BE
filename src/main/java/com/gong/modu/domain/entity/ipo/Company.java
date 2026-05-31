@@ -59,6 +59,14 @@ public class Company extends BaseTimeEntity {
     @Column(name = "established_at") // 설립일은 API에서 없거나 파싱되지 않을 수 있어 NULL 허용
     private LocalDate establishedAt; // 회사 설립일
 
+    @Column(name = "is_spac", nullable = false)
+    @Builder.Default
+    private boolean isSpac = false;
+
+    public boolean isSpac() {
+        return isSpac;
+    }
+
     // DART/KRX/KIS 수집 결과로 기업 기본정보를 갱신하는 메서드
     public void updateBasicInfo(
                                  String corpName, // 새 기업명
@@ -68,7 +76,8 @@ public class Company extends BaseTimeEntity {
                                  String stockName, // 새 종목명
                                  MarketType marketType, // 새 시장구분
                                  String industryCode, // 새 업종 코드
-                                 LocalDate establishedAt // 새 설립일
+                                 LocalDate establishedAt, // 새 설립일
+                                 boolean isSpac // 스팩 여부
     ) {
         this.corpName = corpName;
         this.corpNameEng = corpNameEng;
@@ -78,5 +87,13 @@ public class Company extends BaseTimeEntity {
         this.marketType = marketType;
         this.industryCode = industryCode;
         this.establishedAt = establishedAt;
+        this.isSpac = isSpac;
+    }
+
+    public static boolean detectSpac(String corpName) {
+        if (corpName == null) return false;
+        return corpName.contains("스팩")
+                || corpName.contains("기업인수목적")
+                || corpName.toUpperCase().contains("SPAC");
     }
 }

@@ -43,8 +43,7 @@ public class IpoDisclosureReportSummarizeService {
         IpoOffering offering = ipoEvent.getOffering();
         IpoMetric metric = ipoEvent.getMetric();
 
-        boolean isSpac = company.getCorpName().contains("스팩")
-                || company.getCorpName().toUpperCase().contains("SPAC");
+        boolean isSpac = company.isSpac();
 
         List<IpoEventBroker> brokers = eventBrokerRepository.findByIpoEventId(ipoEvent.getId());
         List<CompanyFinancialHighlight> financials = financialHighlightRepository
