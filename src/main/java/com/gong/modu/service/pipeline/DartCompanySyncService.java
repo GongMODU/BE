@@ -39,6 +39,8 @@ public class DartCompanySyncService {
         String stockCode = emptyToNull(response.getStockCode());
         String stockName = emptyToNull(response.getStockName());
 
+        boolean isSpac = Company.detectSpac(response.getCorpName());
+
         return companyRepository.findByCorpCode(response.getCorpCode())
                 .map(existing -> {
                     existing.updateBasicInfo( // 기존 Company 기본 정보를 최신 DART 응답값으로 갱신
@@ -49,7 +51,8 @@ public class DartCompanySyncService {
                             stockName,
                             marketType,
                             response.getIndutyCode(),
-                            establishedAt
+                            establishedAt,
+                            isSpac
                     );
 
                     return existing; // 갱신된 기존 엔티티 반환
@@ -64,6 +67,7 @@ public class DartCompanySyncService {
                                 .marketType(marketType)
                                 .industryCode(response.getIndutyCode())
                                 .establishedAt(establishedAt)
+                                .isSpac(isSpac)
                                 .build()
                 ));
     }

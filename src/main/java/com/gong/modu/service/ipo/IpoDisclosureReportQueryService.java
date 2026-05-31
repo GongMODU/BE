@@ -48,8 +48,7 @@ public class IpoDisclosureReportQueryService {
 
         IpoEvent ipoEvent = report.getIpoEvent();
         Company company = ipoEvent.getCompany();
-        boolean isSpac = company.getCorpName().contains("스팩")
-                || company.getCorpName().toUpperCase().contains("SPAC");
+        boolean isSpac = company.isSpac();
 
         return IpoDisclosureReportResponse.builder()
                 .companyName(company.getCorpName())
