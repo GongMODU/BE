@@ -3,8 +3,10 @@ package com.gong.modu.service.pipeline;
 import com.gong.modu.util.ExternalNumberParser;
 import lombok.Builder;
 import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -12,8 +14,14 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+@Slf4j
 @Component
 public class DisclosureFinancialStatementParser {
+
+    // IPO 대상 회사의 매출액으로 신뢰 가능한 최소 임계값 (1억원).
+    // 평탄화된 텍스트에서 항목 번호나 페이지 번호 같은 작은 숫자가 매출액으로 잘못 매칭되는 경우를 차단.
+    // (실제 IPO 대상 회사는 보통 수십~수백억 단위. 0/null 은 매칭 자체가 없는 정상 케이스로 별도 처리.)
+    private static final long REVENUE_SANITY_MIN = 100_000_000L;
 
     private static final Pattern YEAR_PATTERN = Pattern.compile("(20\\d{2})");
     private static final Pattern AMOUNT_PATTERN = Pattern.compile("\\(?-?\\d{1,3}(?:,\\d{3})+\\)?|\\(?-?\\d+\\)?");
@@ -44,6 +52,7 @@ public class DisclosureFinancialStatementParser {
         List<ParsedFinancialHighlight> highlights = new ArrayList<>();
 
         for (int i = 0; i < years.size(); i++) {
+            String year = years.get(i);
             Long revenue = scale(get(revenues, i), multiplier);
             Long operatingProfit = scale(get(operatingProfits, i), multiplier);
             Long netIncome = scale(get(netIncomes, i), multiplier);
@@ -55,8 +64,17 @@ public class DisclosureFinancialStatementParser {
                 continue;
             }
 
+            // 매출액 sanity check: 음수 또는 임계값 미만이면 잘못 매칭된 신호로 판단해 행 전체 폐기.
+            // (매출액과 다른 항목들이 같은 표에서 추출됐으므로 매출액이 의심스러우면 다른 값도 신뢰 불가)
+            // 매출액이 null 인 경우는 표에서 매출액 라인을 못 찾은 정상 케이스라 허용.
+            if (revenue != null && (revenue < 0 || revenue < REVENUE_SANITY_MIN)) {
+                log.warn("[DisclosureFinancialStatementParser] 매출액 sanity 실패 → 해당 연도 폐기: year={}, revenue={}",
+                        year, revenue);
+                continue;
+            }
+
             highlights.add(ParsedFinancialHighlight.builder()
-                    .businessYear(years.get(i))
+                    .businessYear(year)
                     .revenue(revenue)
                     .operatingProfit(operatingProfit)
                     .netIncome(netIncome)
@@ -112,12 +130,26 @@ public class DisclosureFinancialStatementParser {
         return normalized.substring(start, end);
     }
 
+    // 사업연도 후보 추출 시 허용 범위
+    // - 상한: 작년 (사업보고서는 결산 후 다음 해 초에 제출되므로 가장 최신이 작년)
+    // - 하한: 상한에서 N년 전 (너무 옛날 연도가 끌려오지 않도록)
+    // 미래 연도(전환사채 만기·락업 해제·예측 등) 와 무관한 옛 연도(설립일 등) 를 모두 배제하기 위함
+    private static final int FUTURE_YEAR_BUFFER = 0;
+    private static final int PAST_YEAR_BUFFER = 2;
+
     private List<String> findRecentYears(String section, int recentYears) {
+        int latestAllowed = LocalDate.now().minusYears(1).getYear() + FUTURE_YEAR_BUFFER;
+        int earliestAllowed = latestAllowed - Math.max(1, recentYears) - PAST_YEAR_BUFFER;
+
         Set<String> years = new LinkedHashSet<>();
         Matcher matcher = YEAR_PATTERN.matcher(section);
 
         while (matcher.find()) {
-            years.add(matcher.group(1));
+            String yearStr = matcher.group(1);
+            int year = Integer.parseInt(yearStr);
+            if (year >= earliestAllowed && year <= latestAllowed) {
+                years.add(yearStr);
+            }
         }
 
         return years.stream()

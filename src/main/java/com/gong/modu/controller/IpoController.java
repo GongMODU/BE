@@ -127,13 +127,45 @@ public class IpoController {
         return ResponseEntity.ok(detailQueryService.getDetail(ipoEventId, userId));
     }
 
-    // 재무 차트용 연간 재무 하이라이트 조회 / 최신 2개년, bsnsYear 오름차순
-    // 데이터 없으면 빈 배열 반환 (404 아님)
+    @Operation(
+            summary = "공모주 상세 재무제표 요약 차트 데이터 조회",
+            description = """
+                    기능명세서 3.1.3 공시 리포트 요약의 재무제표 요약 섹션에서 사용할 연간 재무 하이라이트를 반환합니다.
+                    최신 2개 사업연도를 `bsnsYear` 오름차순으로 반환하며, 동일 연도에 연결(CFS) / 개별(OFS)
+                    둘 다 존재할 경우 CFS 를 우선합니다.
+
+                    응답 필드 (`IpoFinancialResponse`):
+                    - `year` — 사업연도 (예: "2024"). 프론트에서 "제N기" 표현으로 가공
+                    - `revenue` — 매출액 (원 단위. SPAC 은 0 일 수 있음)
+                    - `operatingProfit` / `netIncome` — 영업이익 / 당기순이익 (손실 시 음수)
+                    - `totalAssets` / `totalLiabilities` / `totalEquity` — 자산 / 부채 / 자본 총계 (자본잠식 시 음수 가능)
+
+                    데이터가 없으면 빈 배열을 반환합니다 (404 아님).
+                    사유와 함께 받고 싶다면 `/financials/status` 를 사용하세요.
+                    """
+    )
     @GetMapping("/{ipoEventId}/financials")
     public ResponseEntity<List<IpoFinancialResponse>> getFinancials(@PathVariable Long ipoEventId) {
         return ResponseEntity.ok(financialQueryService.getFinancials(ipoEventId));
     }
 
+    @Operation(
+            summary = "공모주 상세 재무제표 데이터 + 미가용 사유 조회",
+            description = """
+                    `/financials` 와 동일한 데이터를 반환하되, 데이터가 없을 때 프론트에서 표시할 사유를 함께 내려줍니다.
+                    재무제표 요약 카드에 "데이터 없음" 메시지를 노출해야 하는 케이스를 분기하기 위함입니다.
+
+                    응답 필드:
+                    - `financials` — 재무 하이라이트 배열 (`/financials` 와 동일 스펙). 미가용 시 빈 배열
+                    - `available` — 재무 데이터 가용 여부
+                    - `unavailableReason` — `available=false` 일 때만 값이 들어옴
+                        - `SPAC`                     → 스팩이라 영업 재무지표가 사실상 없음
+                        - `DISCLOSURE_NOT_PARSED`    → 공시 원문 파싱 전 (재시도하면 채워질 수 있음)
+                        - `FINANCIAL_TABLE_NOT_FOUND`→ 원문 파싱은 됐으나 재무제표 표를 찾지 못함
+                        - `NO_FINANCIAL_DATA`        → 그 외 사유로 데이터 없음
+                    - `message` — 프론트에 그대로 노출 가능한 안내 문구
+                    """
+    )
     @GetMapping("/{ipoEventId}/financials/status")
     public ResponseEntity<IpoFinancialStatusResponse> getFinancialStatus(@PathVariable Long ipoEventId) {
         return ResponseEntity.ok(financialQueryService.getFinancialStatus(ipoEventId));
