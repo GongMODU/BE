@@ -9,7 +9,10 @@ import com.gong.modu.exception.CustomException;
 import com.gong.modu.exception.ErrorCode;
 import com.gong.modu.repository.user.EmailVerificationCodeRepository;
 import com.gong.modu.repository.user.PasswordResetTokenRepository;
+import com.gong.modu.repository.user.UserInterestIpoRepository;
+import com.gong.modu.repository.user.UserInvestmentProfileSessionRepository;
 import com.gong.modu.repository.user.UserRepository;
+import com.gong.modu.repository.user.UserSubscriptionHistoryRepository;
 import com.gong.modu.util.JwtUtil;
 import com.gong.modu.util.RedisUtil;
 import io.jsonwebtoken.Claims;
@@ -30,6 +33,9 @@ public class AuthService {
     private final UserRepository userRepository;
     private final EmailVerificationCodeRepository emailVerificationCodeRepository;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
+    private final UserInterestIpoRepository userInterestIpoRepository;
+    private final UserSubscriptionHistoryRepository userSubscriptionHistoryRepository;
+    private final UserInvestmentProfileSessionRepository userInvestmentProfileSessionRepository;
     private final JwtUtil jwtUtil;
     private final RedisUtil redisUtil;
     private final PasswordEncoder passwordEncoder;
@@ -202,6 +208,32 @@ public class AuthService {
 
         resetToken.getUser().updatePasswordHash(passwordEncoder.encode(request.getNewPassword()));
         resetToken.use();
+    }
+
+    // ────────── 회원탈퇴 ──────────
+    @Transactional
+    public void withdraw(Long userId, String accessToken, WithdrawRequest request) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.USER_NOT_FOUND));
+
+        if (user.getProvider() == Provider.LOCAL) {
+            if (request.getPassword() == null || !passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+                throw new CustomException(ErrorCode.INVALID_PASSWORD);
+            }
+        }
+
+        userInvestmentProfileSessionRepository.deleteByUser(user);
+        userInterestIpoRepository.deleteByUser(user);
+        userSubscriptionHistoryRepository.deleteByUser(user);
+        passwordResetTokenRepository.deleteByUser(user);
+        userRepository.delete(user);
+
+        Claims claims = jwtUtil.parseClaims(accessToken);
+        long remainingMillis = claims.getExpiration().getTime() - System.currentTimeMillis();
+        if (remainingMillis > 0) {
+            redisUtil.addToBlacklist(accessToken, remainingMillis);
+        }
+        redisUtil.deleteRefreshToken(userId);
     }
 
     // ────────── 공통: 토큰 발급 ──────────

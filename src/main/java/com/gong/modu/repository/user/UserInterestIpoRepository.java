@@ -24,4 +24,6 @@ public interface UserInterestIpoRepository extends JpaRepository<UserInterestIpo
 
     // 관심 등록 해제용 삭제
     void deleteByUserAndIpoEventId(User user, Long ipoEventId);
+
+    void deleteByUser(User user);
 }

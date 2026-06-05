@@ -9,4 +9,6 @@ import java.util.Optional;
 public interface UserInvestmentProfileSessionRepository extends JpaRepository<UserInvestmentProfileSession, Long> {
 
     Optional<UserInvestmentProfileSession> findByUser(User user);
+
+    void deleteByUser(User user);
 }
