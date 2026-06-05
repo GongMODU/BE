@@ -35,4 +35,6 @@ public interface UserSubscriptionHistoryRepository extends JpaRepository<UserSub
 
     // 특정 사용자가 특정 공모 이벤트에 대해 남긴 청약 이력 조회
     List<UserSubscriptionHistory> findByUserAndIpoEventId(User user, Long ipoEventId);
+
+    void deleteByUser(User user);
 }

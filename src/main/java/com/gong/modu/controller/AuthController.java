@@ -62,6 +62,18 @@ public class AuthController {
         return ResponseEntity.ok().build();
     }
 
+    @Operation(summary = "회원탈퇴")
+    @DeleteMapping("/withdraw")
+    public ResponseEntity<Void> withdraw(
+            @RequestHeader("Authorization") String authHeader,
+            @AuthenticationPrincipal Long userId,
+            @RequestBody WithdrawRequest request
+    ) {
+        String accessToken = authHeader.substring(7);
+        authService.withdraw(userId, accessToken, request);
+        return ResponseEntity.ok().build();
+    }
+
     @Operation(summary = "비밀번호 재설정 링크 발송")
     @PostMapping("/password/resetrequest")
     public ResponseEntity<Void> sendPasswordResetLink(@RequestBody @Valid PasswordResetRequest request) {
