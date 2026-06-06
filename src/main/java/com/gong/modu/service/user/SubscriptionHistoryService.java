@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.List;
+import java.util.Set;
 
 // 청약 이력 (4.1 과거 투자 이력 + 4.2 현재 청약 중 이력) 관리 서비스
 @Service
@@ -31,6 +32,7 @@ public class SubscriptionHistoryService {
     private final IpoEventRepository ipoEventRepository;
     private final UserSubscriptionHistoryRepository historyRepository;
     private final ReturnRateCalculator returnRateCalculator;
+    private final InterestIpoService interestIpoService;
 
     // 4.1 과거 투자 이력 생성 (DB 종목 조회 없이 사용자 직접 입력, status = COMPLETED)
     @Transactional
@@ -87,8 +89,15 @@ public class SubscriptionHistoryService {
                 ? historyRepository.findByUserOrderByCreatedAtDesc(user)
                 : historyRepository.findByUserAndRecordStatus(user, status);
 
+        // 사용자의 관심 IpoEvent ID 를 한 번에 Set 으로 조회 → 각 항목에서 contains 로 boolean 변환 (N+1 회피)
+        Set<Long> favoritedIpoEventIds = interestIpoService.getInterestedIpoEventIds(userId);
+
         return histories.stream()
-                .map(SubscriptionHistoryResponse::from)
+                .map(h -> {
+                    boolean favorited = h.getIpoEvent() != null
+                            && favoritedIpoEventIds.contains(h.getIpoEvent().getId());
+                    return SubscriptionHistoryResponse.from(h, favorited);
+                })
                 .toList();
     }
 
@@ -122,7 +131,12 @@ public class SubscriptionHistoryService {
     @Transactional(readOnly = true)
     public SubscriptionHistoryResponse getHistory(Long userId, Long historyId) {
         UserSubscriptionHistory history = findOwnedHistory(userId, historyId);
-        return SubscriptionHistoryResponse.from(history);
+
+        // 단건이라 existsByUserAndIpoEventId 단일 쿼리로 충분 (IpoDetailQueryService 와 동일 패턴)
+        Long ipoEventId = history.getIpoEvent() == null ? null : history.getIpoEvent().getId();
+        boolean favorited = ipoEventId != null && interestIpoService.isInterested(userId, ipoEventId);
+
+        return SubscriptionHistoryResponse.from(history, favorited);
     }
 
     // 청약 이력 수정 (null인 필드는 기존 값 유지)
@@ -147,9 +161,16 @@ public class SubscriptionHistoryService {
     }
 
     // ONGOING 이력에 매도 정보를 입력해 COMPLETED 로 전환
+    // allocatedQuantity 옵션이 함께 전달되면 매도 정보 반영 전에 배정수량도 업데이트.
+    // 도메인 라이프사이클 분리(updateAllocationResult vs completeRecord) 는 유지하고,
+    // 매도 화면에서 한 번에 입력하는 프론트 UX 를 지원하기 위한 보강.
     @Transactional
     public void completeHistory(Long userId, Long historyId, CompleteHistoryRequest request) {
         UserSubscriptionHistory history = findOwnedHistory(userId, historyId);
+
+        if (request.getAllocatedQuantity() != null) {
+            history.updateAllocationResult(request.getAllocatedQuantity());
+        }
 
         history.completeRecord(
                 request.getSellPrice(),

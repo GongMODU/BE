@@ -42,7 +42,14 @@ public class SubscriptionHistoryController {
         return ResponseEntity.ok(Map.of("id", id));
     }
 
-    @Operation(summary = "내 청약 이력 조회 (status 미지정 시 전체)")
+    @Operation(
+            summary = "내 청약 이력 조회 (status 미지정 시 전체)",
+            description = """
+                    각 항목의 `favorited` 필드는 연결된 공모주가 사용자의 관심 등록 목록에 있는지 여부.
+                    `ipoEventId` 가 null 인 4.1 직접 입력 이력은 항상 false.
+                    IpoHomeItemResponse / IpoDetailResponse 의 favorited 필드와 동일 시맨틱.
+                    """
+    )
     @GetMapping
     public ResponseEntity<List<SubscriptionHistoryResponse>> getMyHistories(
             @AuthenticationPrincipal Long userId,
@@ -75,7 +82,10 @@ public class SubscriptionHistoryController {
         return ResponseEntity.ok(historyService.getReturnRateSummary(userId, months));
     }
 
-    @Operation(summary = "청약 이력 단건 조회")
+    @Operation(
+            summary = "청약 이력 단건 조회",
+            description = "응답의 `favorited` 필드는 연결된 공모주 찜 여부. `ipoEventId` 가 null 인 직접 입력 이력은 항상 false."
+    )
     @GetMapping("/{historyId}")
     public ResponseEntity<SubscriptionHistoryResponse> getHistory(
             @AuthenticationPrincipal Long userId,
@@ -95,7 +105,14 @@ public class SubscriptionHistoryController {
         return ResponseEntity.ok().build();
     }
 
-    @Operation(summary = "ONGOING 이력을 매도 정보 입력으로 COMPLETED 전환")
+    @Operation(
+            summary = "ONGOING 이력을 매도 정보 입력으로 COMPLETED 전환",
+            description = """
+                    매도 단가/수수료/세금/매도일을 받아 COMPLETED 로 상태 전환.
+                    옵션 필드 `allocatedQuantity` 를 함께 전달하면 매도 정보와 동시에 배정수량도 업데이트.
+                    이미 PATCH `/api/subscription-history/{historyId}` 로 입력했거나 별도 흐름으로 처리한 경우 생략.
+                    """
+    )
     @PostMapping("/{historyId}/complete")
     public ResponseEntity<Void> completeHistory(
             @AuthenticationPrincipal Long userId,

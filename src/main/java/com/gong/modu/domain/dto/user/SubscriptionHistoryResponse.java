@@ -76,7 +76,14 @@ public class SubscriptionHistoryResponse {
     @Schema(description = "이력 마지막 수정 시각", example = "2026-05-24T10:00:00")
     private LocalDateTime updatedAt;
 
-    public static SubscriptionHistoryResponse from(UserSubscriptionHistory history) {
+    @Schema(description = "연결된 공모주 찜 여부. ipoEventId 가 null 인 직접 입력 이력은 항상 false. " +
+            "IpoHomeItemResponse / IpoDetailResponse 의 favorited 필드와 동일 시맨틱.",
+            example = "true")
+    private boolean favorited;
+
+    // favorited 는 Service 에서 InterestIpoService 를 통해 별도 계산한 뒤 주입.
+    // IpoEvent 가 null 인 4.1 직접 입력 이력은 호출 측에서 false 를 전달.
+    public static SubscriptionHistoryResponse from(UserSubscriptionHistory history, boolean favorited) {
         return SubscriptionHistoryResponse.builder()
                 .id(history.getId())
                 .recordStatus(history.getRecordStatus())
@@ -98,6 +105,7 @@ public class SubscriptionHistoryResponse {
                 .memo(history.getMemo())
                 .createdAt(history.getCreatedAt())
                 .updatedAt(history.getUpdatedAt())
+                .favorited(favorited)
                 .build();
     }
 }
