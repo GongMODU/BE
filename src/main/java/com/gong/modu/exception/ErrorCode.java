@@ -33,7 +33,7 @@ public enum ErrorCode {
 
     // Claude API
     CLAUDE_API_ERROR(HttpStatus.BAD_GATEWAY, "Claude API 호출 중 오류가 발생했습니다."),
-    CLAUDE_CREDIT_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "Claude API 크레딧 한도($25)에 도달했습니다. 관리자에게 문의하세요."),
+    CLAUDE_CREDIT_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "Claude API 크레딧 한도($2)에 도달했습니다. 관리자에게 문의하세요."),
 
     // Common
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 내부 오류가 발생했습니다."),
